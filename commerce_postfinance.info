@@ -9,4 +9,3 @@ core = 7.x
 
 ; Base module files
 files[] = commerce_postfinance.module
-

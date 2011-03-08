@@ -7,7 +7,7 @@ function commerce_postfinance_menu() {
   $items = array();
 
   // Define an always accessible path to receive IPNs.
-  $items['commerce_postfinance/IPN/%state'] = array(
+  $items['commerce_postfinance/IPN/%'] = array(
     'page callback' => 'commerce_postfinance_process_ipn',
     'page arguments' => array(1),
     'access callback' => TRUE,
@@ -270,7 +270,7 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
  * @return
  *   TRUE or FALSE indicating whether the IPN was successfully processed or not.
  */
-function commerce_postfinance_process_ipn($subUri = NULL, $debug_ipn = array()) {
+function commerce_postfinance_process_ipn($uri = NULL, $debug_ipn = array()) {
   // Retrieve the IPN from $_POST if the caller did not supply an IPN array.
   if (empty($debug_ipn)) {
     $ipn = $_POST;
@@ -297,23 +297,20 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
 
     if ($ipn['SHASIGN'] == $shaDigest) {
       // update order ..
-      watchdog('commerce_postfinance', 'received Callback for @oid', array('@oid' => $orderid),WATCHDOG_INFO);
+      watchdog('commerce_postfinance', 'received Callback for @oid / @uri / @state', array('@oid' => $orderid, '@uri'=>$uri[0], '@state'=>$ipn['STATUS']),WATCHDOG_INFO);
       $oid = substr($orderid, strlen($settings['order_prefix']));
       $order = commerce_order_load($oid);
-      $status = 'processing';
-      watchdog('commerce_postfinance', 'suburi @oid', array('@oid' => $subUri),WATCHDOG_INFO);
-      if(!empty($subUri)){
-	switch ($subUri[0]) {
-	  case 'ok':
-	    $status = 'completed';
-	    break;
-	  case 'fail':
-	    $status = 'canceled';
-	    break;
-	}  
+      
+      $status = COMMERCE_PAYMENT_STATUS_FAILURE;
+      if((empty($ipn['NCERROR']) || $ipn['NCERROR']==0)){
+      	$status = COMMERCE_PAYMENT_STATUS_SUCCESS;      	
+      }else{
+      	watchdog('commerce_postfinance', 'NCERROR (@code) @text', array('@code' => $ipn['NCERROR'], '@text'=>$ipn['NCERRORPLUS']),WATCHDOG_WARNING);
       }
-		watchdog('commerce_epayment', 'status > @name: @val', array('@name' => $status, '@val' => $subUri),WATCHDOG_DEBUG);
-      //commerce_order_status_update($order, $status, FALSE);
+      
+      commerce_postfinance_transaction($payment_method, $order, $ipn, $status);
+      
+      //commerce_order_status_update($order, $status, FALSE); - this breaks the flow - user will get 404 ..
       return TRUE;
     } else {
 	 watchdog('commerce_postfinance', 'IPN callback with wrong sign: Order @oid not updated - calculated digest @dig', array('@oid'=> $orderid, '@dig' => $shaDigest),WATCHDOG_WARNING);
@@ -328,6 +325,28 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
 
 }
 
+/**
+ * Save the payment transaction for the order.
+ */
+function commerce_postfinance_transaction($payment_method, $order, $response, $transaction_status) {
+  $transaction = commerce_payment_transaction_new('commerce_postfinance', $order->order_id);
+  $transaction->instance_id = $payment_method['instance_id'];
+  $transaction->amount = $order->commerce_order_total[LANGUAGE_NONE][0]['amount'];
+  $transaction->currency_code = $order->commerce_order_total[LANGUAGE_NONE][0]['currency_code'];
+  $transaction->remote_id = $response['PAYID'];
+
+  $transaction->status = $transaction_status;
+  if ($transaction_status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
+    $transaction->message = 'Transaction accepted with id @transaction_id';
+  }
+  elseif ($transaction_status == COMMERCE_PAYMENT_STATUS_FAILURE) {
+    $transaction->message = 'Error for the transaction with id @transaction_id';
+  }
+  $transaction->message_variables = array(
+    '@transaction_id' => $response['PAYID'],
+  );
+  commerce_payment_transaction_save($transaction);
+}
 
 /**
  * Returns the URL to the specified Postfinance server.
