@@ -1,5 +1,5 @@
 name = Postfinance e-Payment
-description = Implements Postfinance ePayment Services for use with Drupal Commerce.
+description = Implements Postfinance e-Payment Services for use with Drupal Commerce.
 package = Commerce (Postfinance)
 dependencies[] = commerce
 dependencies[] = commerce_ui
