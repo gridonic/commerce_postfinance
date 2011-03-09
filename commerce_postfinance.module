@@ -9,7 +9,7 @@ function commerce_postfinance_menu() {
   // Define an always accessible path to receive IPNs.
   $items['commerce_postfinance/IPN/%'] = array(
     'page callback' => 'commerce_postfinance_process_ipn',
-    'page arguments' => array(1),
+    'page arguments' => array(2),
     'access callback' => TRUE,
     'type' => MENU_CALLBACK,
   );
@@ -30,6 +30,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
 
   $settings = (array) $settings + array(
     'PSPID' => '',
+    'shop_uri' => 'Web-Shop',
     'currency_code' => in_array($default_currency, array_keys(commerce_postfinance_default_currencies())) ? $default_currency : 'CHF',
     'language' => 'DE',
     'server' => 'test',
@@ -43,8 +44,15 @@ function commerce_postfinance_settings_form($settings = NULL) {
   $form['PSPID'] = array(
     '#type' => 'textfield',
     '#title' => t('PSPID'),
-    '#description' => t('The PSPID you use for the Postfinance ePayment account you want to receive payments.'),
+    '#description' => t('The PSPID you use for the Postfinance e-Payment account you want to receive payments.'),
     '#default_value' => $settings['PSPID'],
+    '#required' => TRUE,
+  );
+  $form['shop_uri'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Shop URI'),
+    '#description' => t('Used as return url Merchant Shop, URI after '.url('<front>', array('absolute' => TRUE))),
+    '#default_value' => $settings['shop_uri'],
     '#required' => TRUE,
   );
   $form['currency_code'] = array(
@@ -56,7 +64,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
   );
   $form['language'] = array(
     '#type' => 'select',
-    '#title' => t('Language submitted to Postfinance ePayment'),
+    '#title' => t('Language submitted to Postfinance e-Payment'),
     '#options' => commerce_postfinance_default_languages(),
     '#default_value' => $settings['language'],
   );
@@ -71,7 +79,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
   );
   $form['server_encoding'] = array(
     '#type' => 'radios',
-    '#title' => t('The encoding you entered in the Postfinance ePayment configuration'),
+    '#title' => t('The encoding you entered in the Postfinance e-Payment configuration'),
     '#options' => array(
       'iso' => ('ISO-8859-1'),
       'utf' => ('UTF-8'),
@@ -92,41 +100,24 @@ function commerce_postfinance_settings_form($settings = NULL) {
   $form['payment_security_key'] = array(
     '#type' => 'textfield',
     '#title' => t('SHA-X-IN Key'),
-    '#description' => t('The Key you entered in the Postfinance ePayment configuration'),
+    '#description' => t('The Key you entered in the Postfinance e-Payment configuration'),
     '#default_value' => $settings['payment_security_key']
   );
   $form['reply_security_key'] = array(
     '#type' => 'textfield',
     '#title' => t('SHA-X-OUT Key'),
-    '#description' => t('The Key you entered in the Postfinance ePayment configuration'),
+    '#description' => t('The Key you entered in the Postfinance e-Payment configuration'),
     '#default_value' => $settings['reply_security_key']
   );
   $form['order_prefix'] = array(
     '#type' => 'textfield',
     '#title' => t('Orderprefix'),
-    '#description' => t('This will be placed in front of the order number submitted to Postfinance ePayment.'),
+    '#description' => t('This will be placed in front of the order number submitted to Postfinance e-Payment.'),
     '#default_value' => $settings['order_prefix']
   );
   return $form;
 }
 
-/**
- * Implements hook_commerce_payment_method_info().
- */
-function commerce_postfinance_commerce_payment_method_info() {
-  $payment_methods = array();
-
-  $payment_methods['epayment_postfinance'] = array(
-    'base' => 'commerce_postfinance',
-    'title' => t('Postfinance e-Payment'),
-    'short_title' => t('ePayment'),
-    'description' => t('Postfiance ePayment'),
-    'terminal' => FALSE,
-    'offsite' => TRUE,
-  );
-
-  return $payment_methods;
-}
 
 /**
  * Payment method callback: redirect form, a wrapper around the module's general
@@ -135,7 +126,7 @@ function commerce_postfinance_commerce_payment_method_info() {
 function commerce_postfinance_redirect_form($form, &$form_state, $order, $payment_method) {
   // Return an error if the enabling action's settings haven't been configured.
   if (empty($payment_method['settings']['PSPID'])) {
-    drupal_set_message(t('Postfinance e-Payment is not configured for use. No PSPID has been specified.'), 'error');
+    drupal_set_message(t('Postfinance e-Payment (Method: '.$payment_method['instance_id'].') is not configured for use. No PSPID has been specified.'), 'error');
     return array();
   }
 
@@ -148,6 +139,8 @@ function commerce_postfinance_redirect_form($form, &$form_state, $order, $paymen
 
     // Specify the current payment method instance ID in the notify_url
     'payment_method' => $payment_method['instance_id'],
+    
+    'home_url' => url('<front>', array('absolute' => TRUE)),
   );
 
   return commerce_postfinance_order_form($form, $form_state, $order, $payment_method['settings'] + $settings);
@@ -199,6 +192,8 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
 
     // The store's PayPal e-mail address
     'PSPID' => $settings['PSPID'],
+    'PM' => $settings['PM'],
+    'BRAND' => (!empty($settings['BRAND']) ? $settings['BRAND'] : ''),
 
     // Use the timestamp to generate a unique invoice number
     'orderID' => $settings['order_prefix'].$order->order_number, /* . ' - ' . time(),*/
@@ -219,16 +214,16 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
     'ownercty' => $profile->commerce_customer_address['und']['0']['country'],
     'email' => $order->mail,
 
+	'COMPLUS' => $settings['payment_method'],
 
-    'homeurl' => 'http://www.alufelgenboerse.ch',
+    'homeurl' => $settings['home_url'],
     'accepturl' => $settings['return'],
-    'backurl' => 'http://www.alufelgenboerse.ch/BACK',
+    'backurl' => $settings['cancel_return'],
     'cancelurl' => $settings['cancel_return'],
-    'declineurl' => 'http://www.alufelgenboerse.ch/DECLINED',
-    'catalogurl' => 'http://a.flashag.ch/shop',
+    'declineurl' => $settings['cancel_return'],
+    'catalogurl' => $settings['home_url'].$settings['shop_uri'],
     
   );
-
   $form['#action'] = commerce_postfinance_server_url($settings['server'], $settings['server_encoding']);
 
 // order alphabetically as specified -- they also need to be in order in the form ...
@@ -284,9 +279,15 @@ function commerce_postfinance_process_ipn($uri = NULL, $debug_ipn = array()) {
   // function exists, it is responsible for setting its own watchdog message.
   if (!empty($ipn)) {
 
+
+if(empty($ipn['COMPLUS'])){
+    watchdog('commerce_postfinance', 'COMPLUS (payment_method) not set for an IPN', array(), WATCHDOG_ERROR);
+	return FALSE;
+}
+
 $orderid = $ipn['orderID'];
 
-$payment_method = commerce_payment_method_instance_load('epayment_postfinance|commerce_payment_epayment_postfinance');
+$payment_method = commerce_payment_method_instance_load($ipn['COMPLUS']);
 $settings = $payment_method['settings'];
 
 $shaDigest = '';
@@ -297,15 +298,16 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
 
     if ($ipn['SHASIGN'] == $shaDigest) {
       // update order ..
-      watchdog('commerce_postfinance', 'received Callback for @oid / @uri / @state', array('@oid' => $orderid, '@uri'=>$uri[0], '@state'=>$ipn['STATUS']),WATCHDOG_INFO);
+      watchdog('commerce_postfinance', 'received Callback for @oid / @uri / @state', array('@oid' => $orderid, '@uri'=>print_r($uri, true), '@state'=>$ipn['STATUS']),WATCHDOG_INFO);
       $oid = substr($orderid, strlen($settings['order_prefix']));
       $order = commerce_order_load($oid);
       
       $status = COMMERCE_PAYMENT_STATUS_FAILURE;
-      if((empty($ipn['NCERROR']) || $ipn['NCERROR']==0)){
+      if(empty($ipn['NCERROR']) || $ipn['NCERROR']=='0'){
       	$status = COMMERCE_PAYMENT_STATUS_SUCCESS;      	
       }else{
-      	watchdog('commerce_postfinance', 'NCERROR (@code) @text', array('@code' => $ipn['NCERROR'], '@text'=>$ipn['NCERRORPLUS']),WATCHDOG_WARNING);
+      	$errMSG = (!empty($ipn['NCERRORPLUS']) ? $ipn['NCERRORPLUS'] : '');
+      	watchdog('commerce_postfinance', 'NCERROR (@code) @text', array('@code' => $ipn['NCERROR'], '@text'=>$errMSG),WATCHDOG_WARNING);
       }
       
       commerce_postfinance_transaction($payment_method, $order, $ipn, $status);
@@ -316,12 +318,12 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
 	 watchdog('commerce_postfinance', 'IPN callback with wrong sign: Order @oid not updated - calculated digest @dig', array('@oid'=> $orderid, '@dig' => $shaDigest),WATCHDOG_WARNING);
 
     foreach ($ipn as $name => $value) {
-	    watchdog('commerce_epayment', 'received > @name: @val', array('@name' => $name, '@val' => $value),WATCHDOG_DEBUG);
+	    watchdog('commerce_postfinance', 'received > @name: @val', array('@name' => $name, '@val' => $value),WATCHDOG_DEBUG);
       }
-	return FALSE;
+	
     }
   }
-
+return FALSE;
 
 }
 
@@ -337,13 +339,13 @@ function commerce_postfinance_transaction($payment_method, $order, $response, $t
 
   $transaction->status = $transaction_status;
   if ($transaction_status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
-    $transaction->message = 'Transaction accepted with id @transaction_id';
+    $transaction->message = 'Transaction accepted for @orderid';
   }
   elseif ($transaction_status == COMMERCE_PAYMENT_STATUS_FAILURE) {
-    $transaction->message = 'Error for the transaction with id @transaction_id';
+    $transaction->message = 'Error for the transaction  for @orderid';
   }
   $transaction->message_variables = array(
-    '@transaction_id' => $response['PAYID'],
+    '@orderid' => $response['orderID'],
   );
   commerce_payment_transaction_save($transaction);
 }
@@ -392,12 +394,12 @@ $data = array_flip($data);
     if( strlen($value) > 0 && in_array($nameU, array_keys($shaParams))){
 	$shavalue .= $nameU.'='.$value.$shaKey;
     }/*else{
-watchdog('commerce_epayment', 'IGN > @name: @val', array('@name' => $name, '@val' => $value),WATCHDOG_DEBUG);
+watchdog('commerce_postfinance', 'IGN > @name: @val', array('@name' => $name, '@val' => $value),WATCHDOG_DEBUG);
     }*/
   }
 
  $shaDigest = bin2hex(mhash(commerce_postfinance_security($shaKey,$settings['payment_security']),$shavalue));
-/*watchdog('commerce_epayment', 'received > @name: @val', array('@name' => $shaDigest, '@val' => $shavalue),WATCHDOG_DEBUG);*/
+/*watchdog('commerce_postfinance', 'received > @name: @val', array('@name' => $shaDigest, '@val' => $shavalue),WATCHDOG_DEBUG);*/
 return strtoupper($shaDigest);
 }
 

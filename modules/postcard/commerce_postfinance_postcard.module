@@ -1,0 +1,35 @@
+<?php
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_postfinance_postcard_commerce_payment_method_info() {
+  $payment_methods = array();
+
+  $payment_methods['postfinance_postcard'] = array(
+    'base' => 'commerce_postfinance_postcard',
+    'title' => t('Postcard'),
+    'short_title' => t('Postfinance Postcard'),
+    'description' => t('Postfinance Postcard'),
+    'terminal' => FALSE,
+    'offsite' => TRUE,
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Payment method callback: settings form.
+ */
+function commerce_postfinance_postcard_settings_form($settings = NULL) {
+
+	return commerce_postfinance_settings_form($settings);
+}
+
+
+function commerce_postfinance_postcard_redirect_form($form, &$form_state, $order, $payment_method) {
+
+	$payment_method['settings']['PM'] = 'PostFinance Card';
+	$payment_method['settings']['BRAND'] = 'PostFinance + card';
+	
+	return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
+}

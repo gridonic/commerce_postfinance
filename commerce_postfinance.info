@@ -1,4 +1,4 @@
-name = Postfinance e-Payment
+name = Postfinance e-Payment BASE
 description = Implements Postfinance e-Payment Services for use with Drupal Commerce.
 package = Commerce (Postfinance)
 dependencies[] = commerce

@@ -1,0 +1,8 @@
+name = VISA
+description = Payment Method VISA
+package = Commerce (Postfinance)
+dependencies[] = commerce_postfinance
+core = 7.x
+
+; Base module files
+files[] = commerce_postfinance_VISA.module

@@ -1,0 +1,35 @@
+<?php
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_postfinance_MasterCard_commerce_payment_method_info() {
+  $payment_methods = array();
+
+  $payment_methods['postfinance_MasterCard'] = array(
+    'base' => 'commerce_postfinance_MasterCard',
+    'title' => t('MasterCard'),
+    'short_title' => t('MasterCard'),
+    'description' => t('MasterCard'),
+    'terminal' => FALSE,
+    'offsite' => TRUE,
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Payment method callback: settings form.
+ */
+function commerce_postfinance_MasterCard_settings_form($settings = NULL) {
+
+	return commerce_postfinance_settings_form($settings);
+}
+
+
+function commerce_postfinance_MasterCard_redirect_form($form, &$form_state, $order, $payment_method) {
+
+	$payment_method['settings']['PM'] = 'CreditCard';
+	$payment_method['settings']['BRAND'] = 'MasterCard';
+	
+	return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
+}
