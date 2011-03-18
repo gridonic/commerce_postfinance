@@ -2,6 +2,8 @@
 
 /**
  * Implements hook_menu().
+ *
+ * adds the callback uri
  */
 function commerce_postfinance_menu() {
   $items = array();
@@ -21,6 +23,8 @@ function commerce_postfinance_menu() {
 
 /**
  * Payment method callback: settings form.
+ *
+ * setup settingsform (defaultsettings)
  */
 function commerce_postfinance_settings_form($settings = NULL) {
   $form = array();
@@ -39,6 +43,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
     'payment_security_key' => '',
     'reply_security_key' => '',
     'order_prefix' => '',
+    'template_page' => 'http://postfinance.alufelgenboerse.ch/TemplatePage.html',
   );
 
   $form['PSPID'] = array(
@@ -64,7 +69,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
   );
   $form['language'] = array(
     '#type' => 'select',
-    '#title' => t('Language submitted to Postfinance e-Payment'),
+    '#title' => t('Default language submitted to Postfinance e-Payment'),
     '#options' => commerce_postfinance_default_languages(),
     '#default_value' => $settings['language'],
   );
@@ -115,13 +120,19 @@ function commerce_postfinance_settings_form($settings = NULL) {
     '#description' => t('This will be placed in front of the order number submitted to Postfinance e-Payment.'),
     '#default_value' => $settings['order_prefix']
   );
+  $form['template_page'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Template Page'),
+    '#description' => t('This .html file will be used as template file by Postfinance'),
+    '#default_value' => $settings['template_page']
+  );
   return $form;
 }
 
 
 /**
  * Payment method callback: redirect form, a wrapper around the module's general
- *   use function for building a WPS form.
+ *   use function for building a form.
  */
 function commerce_postfinance_redirect_form($form, &$form_state, $order, $payment_method) {
   // Return an error if the enabling action's settings haven't been configured.
@@ -140,6 +151,7 @@ function commerce_postfinance_redirect_form($form, &$form_state, $order, $paymen
     // Specify the current payment method instance ID in the notify_url
     'payment_method' => $payment_method['instance_id'],
     
+    //get the front-url
     'home_url' => url('<front>', array('absolute' => TRUE)),
   );
 
@@ -164,17 +176,6 @@ function commerce_postfinance_redirect_form_validate($order, $payment_method) {
  *   The fully loaded order being paid for.
  * @param $settings
  *   An array of settings used to build out the form, including:
- *   - server: which server to use, either sandbox or live
- *   - PSPID: the PayPal e-mail address the payment submits to
- *   - cancel_return: the URL PayPal should send the user to on cancellation
- *   - return: the URL PayPal should send the user to on successful payment
- *   - currency_code: the PayPal currency code to use for this payment if the
- *     total for the order is in a non-PayPal supported currency
- *   - language: the PayPal language code to use on the payment form
- *   - payment_action: the PayPal payment action to use: sale, authorization,
- *     or order
- *   - payment_method: optionally the name of the Commerce payment method to
- *     include in the IPN notify_url
  *
  * @return
  *   A renderable form array.
@@ -190,12 +191,13 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
   $data = array(
 
 
-    // The store's PayPal e-mail address
+    // The store's PSPID
     'PSPID' => $settings['PSPID'],
+    // Paymentmethod / Brand
     'PM' => $settings['PM'],
     'BRAND' => (!empty($settings['BRAND']) ? $settings['BRAND'] : ''),
 
-    // Use the timestamp to generate a unique invoice number
+    // Use the timestamp to generate a unique invoice number ?
     'orderID' => $settings['order_prefix'].$order->order_number, /* . ' - ' . time(),*/
 
     // Set the currency and language codes
@@ -204,7 +206,7 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
 
     // Define a single item in the cart representing the whole order
     'amount' => $total['amount'].'00',
-     'tp' => 'http://postfinance.alufelgenboerse.ch/TemplatePage.html',
+     'tp' => $settings['template_page'],
 
     'COM' => t('Bestellung @order_number auf @store', array('@order_number' => $order->order_number, '@store' => variable_get('site_name', url('<front>', array('absolute' => TRUE))))),
     'CN' => $profile->commerce_customer_address['und']['0']['name_line'],
@@ -226,7 +228,7 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
   );
   $form['#action'] = commerce_postfinance_server_url($settings['server'], $settings['server_encoding']);
 
-// order alphabetically as specified -- they also need to be in order in the form ...
+// order alphabetically as specified -- they already need to be in order in the form ...
 $data = array_flip($data);
 natcasesort($data);
 $data = array_flip($data);
@@ -239,6 +241,7 @@ $data = array_flip($data);
 
 $shaKey = $settings['payment_security_key'];
 if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
+	//add a digest if specified
   $form['SHASign'] = array('#type' => 'hidden', '#value' => commerce_postfinance_shaDigest($data,$settings,'OUT'));
 }
 
@@ -247,20 +250,17 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
     '#value' => t('Bezahlen'),
   );
 
-/*header("Referer: http://alu.flashag.ch/");*/
-
   return $form;
 }
 
 /**
  * Processes an incoming IPN.
  *
- * @param $payment_method
- *   The payment method instance array that originally made the payment.
+ * @param $uri
+ *   dynamic URI
  * @param $debug_ipn
  *   Optionally specify an IPN array for debug purposes; if left empty, the IPN
- *     be pulled from the $_POST. If an IPN is passed in, validation of the IPN
- *     at PayPal will be bypassed.
+ *     be pulled from the $_POST. 
  *
  * @return
  *   TRUE or FALSE indicating whether the IPN was successfully processed or not.
@@ -274,21 +274,19 @@ function commerce_postfinance_process_ipn($uri = NULL, $debug_ipn = array()) {
     $ipn = $debug_ipn;
   }
 
-  // Give the payment method module an opportunity to validate the receiver
-  // e-mail address and amount of the payment if possible. If a validate
-  // function exists, it is responsible for setting its own watchdog message.
   if (!empty($ipn)) {
 
 
+//Check if the Paymentmethod is in the return data
 if(empty($ipn['COMPLUS'])){
     watchdog('commerce_postfinance', 'COMPLUS (payment_method) not set for an IPN', array(), WATCHDOG_ERROR);
 	return FALSE;
 }
 
-$orderid = $ipn['orderID'];
-
 $payment_method = commerce_payment_method_instance_load($ipn['COMPLUS']);
 $settings = $payment_method['settings'];
+
+$orderid = $ipn['orderID'];
 
 $shaDigest = '';
 $shaKey = $settings['reply_security_key'];
@@ -297,7 +295,6 @@ if(commerce_postfinance_security($shaKey,$settings['payment_security'])){
 }
 
     if ($ipn['SHASIGN'] == $shaDigest) {
-      // update order ..
       watchdog('commerce_postfinance', 'received Callback for @oid / @uri / @state', array('@oid' => $orderid, '@uri'=>print_r($uri, true), '@state'=>$ipn['STATUS']),WATCHDOG_INFO);
       $oid = substr($orderid, strlen($settings['order_prefix']));
       $order = commerce_order_load($oid);
@@ -355,9 +352,11 @@ function commerce_postfinance_transaction($payment_method, $order, $response, $t
  *
  * @param $server
  *   Either test or prod indicating which server to get the URL for.
+ * @param $encoding
+ *   ISO of UTF to determine the used Server URL
  *
  * @return
- *   The URL to use to submit requests to the PayPal WPS server.
+ *   The URL to use to submit requests to the Postfinance server.
  */
 function commerce_postfinance_server_url($server, $encoding) {
   switch ($encoding) {
@@ -368,10 +367,16 @@ function commerce_postfinance_server_url($server, $encoding) {
   }
 }
 
+/*
+* Creates the address string
+*/
 function commerce_postfinance_buildadress($profileFormValues) {
   return trim($profileFormValues['thoroughfare'] .' '. $profileFormValues['premise'] . ' '. $profileFormValues['sub_premise']. ' '.$profileFormValues['dependent_locality']);
 }
 
+/*
+* Calculates the Digest
+*/
 function commerce_postfinance_shaDigest($data, $settings, $shaAct) {
 
 $shaDigest = '';
@@ -424,8 +429,11 @@ return false;
 function commerce_postfinance_default_languages() {
   return drupal_map_assoc(array( 'de_DE', 'fr_FR', 'it_IT', 'es_ES', 'en_US'),'commerce_postfinance_transform_languages');
 }
+/**
+ * Transforms language codes user-readalbe
+ */
 function commerce_postfinance_transform_languages($n){
-return substr($n, -2);
+  return substr($n, -2);
 }
 
 /**
