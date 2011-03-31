@@ -38,12 +38,12 @@ function commerce_postfinance_settings_form($settings = NULL) {
     'currency_code' => in_array($default_currency, array_keys(commerce_postfinance_default_currencies())) ? $default_currency : 'CHF',
     'language' => 'DE',
     'server' => 'test',
-    'server_encoding' => 'iso',
+    'server_encoding' => 'utf',
     'payment_security' => 'none',
     'payment_security_key' => '',
     'reply_security_key' => '',
     'order_prefix' => '',
-    'template_page' => 'http://postfinance.alufelgenboerse.ch/TemplatePage.html',
+    'template_page' => 'http://commerce.flashag.ch/TemplatePage.html',
   );
 
   $form['PSPID'] = array(
