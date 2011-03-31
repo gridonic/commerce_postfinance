@@ -1,4 +1,4 @@
-name = AmericanExpress
+name = American Express
 description = Payment Method Amexco
 package = Commerce (Postfinance)
 dependencies[] = commerce_postfinance

@@ -29,7 +29,7 @@ function commerce_postfinance_PayPal_settings_form($settings = NULL) {
 function commerce_postfinance_PayPal_redirect_form($form, &$form_state, $order, $payment_method) {
 
 	$payment_method['settings']['PM'] = 'PAYPAL';
-	$payment_method['settings']['BRAND'] = 'PAYPAL';
+	/*$payment_method['settings']['BRAND'] = 'PAYPAL';*/
 	
 	return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
 }
