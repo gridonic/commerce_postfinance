@@ -390,12 +390,13 @@ $shaParams = commerce_postfinance_shaINparams();
 }
 
 // order alphabetically as specified
-$data = array_flip($data);
-natcasesort($data);
-$data = array_flip($data);
+$dataKeys = array_keys($data);
+natcasesort($dataKeys);
 
-  foreach ($data as $name => $value) {
+  foreach ($dataKeys as $name) {
     $nameU = strtoupper($name);
+    $value = $data[$name];
+
     if( strlen($value) > 0 && in_array($nameU, array_keys($shaParams))){
 	$shavalue .= $nameU.'='.$value.$shaKey;
     }/*else{
