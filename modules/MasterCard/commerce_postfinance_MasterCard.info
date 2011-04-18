@@ -1,8 +1,0 @@
-name = MasterCard
-description = Payment Method MasterCard
-package = Commerce (Postfinance)
-dependencies[] = commerce_postfinance
-core = 7.x
-
-; Base module files
-files[] = commerce_postfinance_MasterCard.module

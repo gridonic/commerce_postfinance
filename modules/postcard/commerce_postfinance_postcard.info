@@ -1,8 +1,0 @@
-name = Postcard
-description = Payment Method Postcard
-package = Commerce (Postfinance)
-dependencies[] = commerce_postfinance
-core = 7.x
-
-; Base module files
-files[] = commerce_postfinance_postcard.module

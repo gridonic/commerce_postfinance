@@ -1,8 +1,0 @@
-name = e-Finance
-description = Payment Method e-Finance
-package = Commerce (Postfinance)
-dependencies[] = commerce_postfinance
-core = 7.x
-
-; Base module files
-files[] = commerce_postfinance_eFinance.module
