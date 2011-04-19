@@ -24,7 +24,9 @@ function commerce_postfinance_menu() {
  */
 function commerce_postfinance_commerce_payment_method_info() {
   $payment_methods = array();
-
+  /**
+   * keep the array keys lowercase
+   */
   $payment_methods['commerce_postfinance'] = array(
     'base' => 'commerce_postfinance',
     'title' => t('Postfinance e-Payment'),
@@ -33,7 +35,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'terminal' => FALSE,
     'offsite' => TRUE,
   );
-  $payment_methods['commerce_postfinance_eFinance'] = array(
+  $payment_methods['commerce_postfinance_efinance'] = array(
     'base' => 'commerce_postfinance_eFinance',
     'title' => t('e-Finance'),
     'short_title' => t('Postfinance e-Finance'),
@@ -41,7 +43,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'terminal' => FALSE,
     'offsite' => TRUE,
   );
-  $payment_methods['commerce_postfinance_PostCard'] = array(
+  $payment_methods['commerce_postfinance_postcard'] = array(
     'base' => 'commerce_postfinance_PostCard',
     'title' => t('PostCard'),
     'short_title' => t('Postfinance PostCard'),
@@ -49,7 +51,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'terminal' => FALSE,
     'offsite' => TRUE,
   );
-  $payment_methods['postfinance_Amexco'] = array(
+  $payment_methods['postfinance_amexco'] = array(
     'base' => 'commerce_postfinance_Amexco',
     'title' => t('American Express'),
     'short_title' => t('American Express'),
@@ -57,7 +59,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'terminal' => FALSE,
     'offsite' => TRUE,
   );
-  $payment_methods['postfinance_MasterCard'] = array(
+  $payment_methods['postfinance_mastercard'] = array(
     'base' => 'commerce_postfinance_MasterCard',
     'title' => t('MasterCard'),
     'short_title' => t('MasterCard'),
@@ -65,7 +67,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'terminal' => FALSE,
     'offsite' => TRUE,
   );
-  $payment_methods['postfinance_VISA'] = array(
+  $payment_methods['postfinance_visa'] = array(
     'base' => 'commerce_postfinance_VISA',
     'title' => t('VISA'),
     'short_title' => t('VISA'),
@@ -73,7 +75,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'terminal' => FALSE,
     'offsite' => TRUE,
   );
-  $payment_methods['postfinance_PayPal'] = array(
+  $payment_methods['postfinance_paypal'] = array(
     'base' => 'commerce_postfinance_PayPal',
     'title' => t('PayPal'),
     'short_title' => t('PayPal'),
