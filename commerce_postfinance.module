@@ -36,7 +36,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'offsite' => TRUE,
   );
   $payment_methods['commerce_postfinance_efinance'] = array(
-    'base' => 'commerce_postfinance_eFinance',
+    'base' => 'commerce_postfinance_efinance',
     'title' => t('e-Finance'),
     'short_title' => t('Postfinance e-Finance'),
     'description' => t('Postfinance e-Finance'),
@@ -44,7 +44,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'offsite' => TRUE,
   );
   $payment_methods['commerce_postfinance_postcard'] = array(
-    'base' => 'commerce_postfinance_PostCard',
+    'base' => 'commerce_postfinance_postcard',
     'title' => t('PostCard'),
     'short_title' => t('Postfinance PostCard'),
     'description' => t('Postfinance PostCard'),
@@ -52,7 +52,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'offsite' => TRUE,
   );
   $payment_methods['postfinance_amexco'] = array(
-    'base' => 'commerce_postfinance_Amexco',
+    'base' => 'commerce_postfinance_amexco',
     'title' => t('American Express'),
     'short_title' => t('American Express'),
     'description' => t('American Express'),
@@ -60,7 +60,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'offsite' => TRUE,
   );
   $payment_methods['postfinance_mastercard'] = array(
-    'base' => 'commerce_postfinance_MasterCard',
+    'base' => 'commerce_postfinance_mastercard',
     'title' => t('MasterCard'),
     'short_title' => t('MasterCard'),
     'description' => t('MasterCard'),
@@ -68,7 +68,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'offsite' => TRUE,
   );
   $payment_methods['postfinance_visa'] = array(
-    'base' => 'commerce_postfinance_VISA',
+    'base' => 'commerce_postfinance_visa',
     'title' => t('VISA'),
     'short_title' => t('VISA'),
     'description' => t('VISA'),
@@ -76,7 +76,7 @@ function commerce_postfinance_commerce_payment_method_info() {
     'offsite' => TRUE,
   );
   $payment_methods['postfinance_paypal'] = array(
-    'base' => 'commerce_postfinance_PayPal',
+    'base' => 'commerce_postfinance_paypal',
     'title' => t('PayPal'),
     'short_title' => t('PayPal'),
     'description' => t('PayPal'),
@@ -198,22 +198,22 @@ function commerce_postfinance_settings_form($settings = NULL) {
 /**
  * needed for every paymentmethod too ..
  */
-function commerce_postfinance_eFinance_settings_form($settings = NULL) {
+function commerce_postfinance_efinance_settings_form($settings = NULL) {
   return commerce_postfinance_settings_form($settings);
 }
-function commerce_postfinance_PostCard_settings_form($settings = NULL) {
+function commerce_postfinance_postcard_settings_form($settings = NULL) {
   return commerce_postfinance_settings_form($settings);
 }
-function commerce_postfinance_Amexco_settings_form($settings = NULL) {
+function commerce_postfinance_amexco_settings_form($settings = NULL) {
     return commerce_postfinance_settings_form($settings);
 }
-function commerce_postfinance_MasterCard_settings_form($settings = NULL) {
+function commerce_postfinance_mastercard_settings_form($settings = NULL) {
     return commerce_postfinance_settings_form($settings);
 }
-function commerce_postfinance_VISA_settings_form($settings = NULL) {
+function commerce_postfinance_visa_settings_form($settings = NULL) {
     return commerce_postfinance_settings_form($settings);
 }
-function commerce_postfinance_PayPal_settings_form($settings = NULL) {
+function commerce_postfinance_paypal_settings_form($settings = NULL) {
     return commerce_postfinance_settings_form($settings);
 }
 
@@ -223,10 +223,8 @@ function commerce_postfinance_PayPal_settings_form($settings = NULL) {
  */
 function commerce_postfinance_redirect_form($form, &$form_state, $order, $payment_method) {
 
-  $default_payment_method = $payment_method;//commerce_payment_method_instance_load('commerce_postfinance|commerce_payment_commerce_postfinance');
-
   // Return an error if the enabling action's settings haven't been configured.
-  if (empty($default_payment_method['settings']['PSPID'])) {
+  if (empty($payment_method['settings']['PSPID'])) {
     drupal_set_message(t('Postfinance e-Payment (Method: @method) is not configured for use. No PSPID has been specified.', array('@method' => $payment_method['instance_id'])), 'error');
     return array();
   }
@@ -245,47 +243,59 @@ function commerce_postfinance_redirect_form($form, &$form_state, $order, $paymen
     'home_url' => url('<front>', array('absolute' => TRUE)),
   );
 
-  return commerce_postfinance_order_form($form, $form_state, $order, $default_payment_method['settings'] + $settings);
+  //check the active language
+  global $language;
+  $actLanguage = drupal_strtoupper($language->language);
+  if ($actLanguage == 'EN') {
+    //EN is en_US for postfinance ..
+    $actLanguage = 'US';
+  }
+  $defLanguages = array_flip(commerce_postfinance_default_languages());
+  if (in_array($actLanguage, array_keys($defLanguages))) {
+    $payment_method['settings']['language'] = $defLanguages[$actLanguage];
+  }
+
+  return commerce_postfinance_order_form($form, $form_state, $order, $payment_method['settings'] + $settings);
 }
 /**
  * needed for every paymentmethod too ..
  */
-function commerce_postfinance_eFinance_redirect_form($form, &$form_state, $order, $payment_method) {
+function commerce_postfinance_efinance_redirect_form($form, &$form_state, $order, $payment_method) {
 
   $payment_method['settings']['PM'] = 'PostFinance e-finance';
   $payment_method['settings']['BRAND'] = 'PostFinance e-finance';
 
   return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
 }
-function commerce_postfinance_PostCard_redirect_form($form, &$form_state, $order, $payment_method) {
+function commerce_postfinance_postcard_redirect_form($form, &$form_state, $order, $payment_method) {
 
   $payment_method['settings']['PM'] = 'PostFinance Card';
   $payment_method['settings']['BRAND'] = 'PostFinance + card';
 
   return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
 }
-function commerce_postfinance_Amexco_redirect_form($form, &$form_state, $order, $payment_method) {
+function commerce_postfinance_amexco_redirect_form($form, &$form_state, $order, $payment_method) {
 
   $payment_method['settings']['PM'] = 'CreditCard';
   $payment_method['settings']['BRAND'] = 'American Express';
 
   return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
 }
-function commerce_postfinance_MasterCard_redirect_form($form, &$form_state, $order, $payment_method) {
+function commerce_postfinance_mastercard_redirect_form($form, &$form_state, $order, $payment_method) {
 
   $payment_method['settings']['PM'] = 'CreditCard';
   $payment_method['settings']['BRAND'] = 'MasterCard';
 
   return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
 }
-function commerce_postfinance_VISA_redirect_form($form, &$form_state, $order, $payment_method) {
+function commerce_postfinance_visa_redirect_form($form, &$form_state, $order, $payment_method) {
 
   $payment_method['settings']['PM'] = 'CreditCard';
   $payment_method['settings']['BRAND'] = 'VISA';
 
   return commerce_postfinance_redirect_form($form, $form_state, $order, $payment_method);
 }
-function commerce_postfinance_PayPal_redirect_form($form, &$form_state, $order, $payment_method) {
+function commerce_postfinance_paypal_redirect_form($form, &$form_state, $order, $payment_method) {
 
   $payment_method['settings']['PM'] = 'PAYPAL';
   $payment_method['settings']['BRAND'] = 'PAYPAL';
