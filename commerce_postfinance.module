@@ -94,9 +94,10 @@ function commerce_postfinance_commerce_payment_method_info() {
  */
 function commerce_postfinance_uninstall() {
   //to be implemented and tested .. , something like
-  //$selectIDquery = db_select('rules_config')->condition('name', array('commerce_postfinance', 'commerce_postfinance_efinance', 'commerce_postfinance_postcard', 'commerce_postfinance_amexco', 'commerce_postfinance_mastercard', 'commerce_postfinance_paypal', 'commerce_postfinance_visa'), 'IN');
+  //$pms = array('commerce_postfinance', 'commerce_postfinance_efinance', 'commerce_postfinance_postcard', 'commerce_postfinance_amexco', 'commerce_postfinance_mastercard', 'commerce_postfinance_paypal', 'commerce_postfinance_visa');
+  //$selectIDquery = db_select('rules_config')->condition('name', $pms, 'IN');
   //db_delete('rules_trigger')->condition('id', $selectIDquery, 'IN')->execute();
-  //db_delete('rules_config')->condition('name', array('commerce_postfinance', 'commerce_postfinance_efinance', 'commerce_postfinance_postcard', 'commerce_postfinance_amexco', 'commerce_postfinance_mastercard', 'commerce_postfinance_paypal', 'commerce_postfinance_visa'), 'IN')->execute();
+  //db_delete('rules_config')->condition('name', $pms, 'IN')->execute();
 }
 
 /**
