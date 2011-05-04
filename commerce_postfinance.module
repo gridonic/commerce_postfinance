@@ -428,7 +428,7 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
 function commerce_postfinance_process_ipn($uri = NULL, $debug_ipn = array()) {
   $ret = 'IPN failed';
   if (ipn_valid($uri, $debug_ipn)) {
-    $ret = 'IPN OK</p>';
+    $ret = 'IPN OK';
   }
 
   //drupal_set_header('Content-Type: text/plain');
