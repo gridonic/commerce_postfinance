@@ -424,10 +424,31 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
  *   Optionally specify an IPN array for debug purposes; if left empty, the IPN
  *     be pulled from the $_POST.
  *
+ */
+function commerce_postfinance_process_ipn($uri = NULL, $debug_ipn = array()) {
+  $ret = 'IPN failed';
+  if (ipn_valid($uri, $debug_ipn)) {
+    $ret = 'IPN OK</p>';
+  }
+
+  //drupal_set_header('Content-Type: text/plain');
+  print $ret;
+  exit(0); //hook_exit will not be invoked
+}
+
+/**
+ * Processes an incoming IPN.
+ *
+ * @param $uri
+ *   dynamic URI
+ * @param $debug_ipn
+ *   Optionally specify an IPN array for debug purposes; if left empty, the IPN
+ *     be pulled from the $_POST.
+ *
  * @return
  *   TRUE or FALSE indicating whether the IPN was successfully processed or not.
  */
-function commerce_postfinance_process_ipn($uri = NULL, $debug_ipn = array()) {
+function ipn_valid($uri = NULL, $debug_ipn = array()) {
   // Retrieve the IPN from $_POST if the caller did not supply an IPN array.
   if (empty($debug_ipn)) {
     $ipn = $_POST;
