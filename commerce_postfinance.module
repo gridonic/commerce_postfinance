@@ -360,7 +360,13 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
   var_dump($d);
   print '</pre>'; */
 
-  $total = commerce_line_items_total($wrapper->commerce_line_items, 'product');
+  if (function_exists('commerce_product_line_item_types')) {
+    //new commerce API 7.x-1.2
+    $total = commerce_line_items_total($wrapper->commerce_line_items, commerce_product_line_item_types());
+  }
+  else {
+    $total = commerce_line_items_total($wrapper->commerce_line_items, 'product');
+  }
 
   // Build the data array that will be translated into hidden form values.
   $data = array(
