@@ -45,7 +45,7 @@ function commerce_postfinance_commerce_payment_method_info() {
   );
   $payment_methods['commerce_postfinance_efinance'] = array(
     'base' => 'commerce_postfinance_efinance',
-    'title' => t('e-Finance'),
+    'title' => t('e-Finance (Postfinance)'),
     'short_title' => t('Postfinance e-Finance'),
     'description' => t('Postfinance e-Finance'),
     'terminal' => FALSE,
@@ -540,9 +540,11 @@ function commerce_postfinance_transaction($payment_method, $order, $response, $t
   $transaction->status = $transaction_status;
   if ($transaction_status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
     $transaction->message = 'Transaction accepted for @orderid';
+    commerce_payment_redirect_pane_next_page($order);
   }
   elseif ($transaction_status == COMMERCE_PAYMENT_STATUS_FAILURE) {
     $transaction->message = 'Error for the transaction  for @orderid';
+    commerce_payment_redirect_pane_previous_page($order);
   }
   $transaction->message_variables = array(
     '@orderid' => $response['orderID'],
