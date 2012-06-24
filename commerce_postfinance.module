@@ -388,7 +388,7 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
     'amount' => $total['amount'], // watch format 347.00 has to be sent as 37400
 
     //setting order and user info
-    'COM' => t('Bestellung @order_number auf @store', array('@order_number' => $order->order_number, '@store' => variable_get('site_name', url('<front>', array('absolute' => TRUE))))),
+    'COM' => t('Order number @order_number of the @store store.', array('@order_number' => $order->order_number, '@store' => variable_get('site_name', url('<front>', array('absolute' => TRUE))))),
     'CN' => $wrapper->commerce_customer_billing->commerce_customer_address->name_line->value() ,
     'owneraddress' => commerce_postfinance_buildadress($wrapper),
     'ownerZIP' => $wrapper->commerce_customer_billing->commerce_customer_address->postal_code->value(),
