@@ -635,7 +635,7 @@ function commerce_postfinance_shaDigest($data, $settings, $shaAct) {
     }*/
   }
 
-  $shaDigest = bin2hex(mhash(commerce_postfinance_security($shaKey, $settings['payment_security']), $shavalue));
+  $shaDigest = hash($settings['payment_security'], $shavalue);
   /* watchdog('commerce_postfinance', 'received > @name: @val', array('@name' => $shaDigest, '@val' => $shavalue), WATCHDOG_DEBUG); */
 
   return drupal_strtoupper($shaDigest);
@@ -660,11 +660,9 @@ function commerce_postfinance_security($key, $security) {
     case 'none':
       return FALSE;
     case 'sha1':
-      return MHASH_SHA1;
     case 'sha256':
-      return MHASH_SHA256;
     case 'sha512':
-      return MHASH_SHA512;
+      return $security;
   }
   return FALSE;
 }
