@@ -360,12 +360,14 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
   var_dump($d);
   print '</pre>'; */
 
-  if (function_exists('commerce_product_line_item_types')) {
-    //new commerce API 7.x-1.2
-    $total = commerce_line_items_total($wrapper->commerce_line_items, commerce_product_line_item_types());
+  if (isset($wrapper->commerce_order_total)) {
+    $total = array();
+    $total['currency_code'] = $wrapper->commerce_order_total->currency_code->value();
+    $total['amount'] = $wrapper->commerce_order_total->amount->value();
   }
   else {
-    $total = commerce_line_items_total($wrapper->commerce_line_items, 'product');
+    // old style
+    $total = commerce_line_items_total($wrapper->commerce_line_items);
   }
 
   // Build the data array that will be translated into hidden form values.
@@ -497,7 +499,7 @@ function ipn_valid($uri = NULL, $debug_ipn = array()) {
 
     if ($ipn['SHASIGN'] == $shaDigest) {
       watchdog('commerce_postfinance', 'received Callback for @oid / @uri / @state', array('@oid' => $orderid, '@uri' => print_r($uri, TRUE), '@state' => $ipn['STATUS']), WATCHDOG_INFO);
-      $oid = substr($orderid, drupal_strlen($settings['order_prefix']));
+      $oid = drupal_substr($orderid, drupal_strlen($settings['order_prefix']));
       $order = commerce_order_load($oid);
 
       $status = COMMERCE_PAYMENT_STATUS_FAILURE;
@@ -686,7 +688,7 @@ function commerce_postfinance_default_languages() {
  *   the stripped language code
  */
 function commerce_postfinance_transform_languages($n) {
-  return substr($n, -2);
+  return drupal_substr($n, -2);
 }
 
 /**
