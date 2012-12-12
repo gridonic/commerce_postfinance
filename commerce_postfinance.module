@@ -498,20 +498,12 @@ function ipn_valid($uri = NULL, $debug_ipn = array()) {
     }
 
     if ($ipn['SHASIGN'] == $shaDigest) {
-      watchdog('commerce_postfinance', 'received Callback for @oid / @uri / @state', array('@oid' => $orderid, '@uri' => print_r($uri, TRUE), '@state' => $ipn['STATUS']), WATCHDOG_INFO);
+      $rStatus = $ipn['STATUS'];
+      watchdog('commerce_postfinance', 'received Callback for @oid / @uri / (@state) @statetext', array('@oid' => $orderid, '@uri' => print_r($uri, TRUE), '@state' => $rStatus, '@statetext' => commerce_postfinance_IPNStatusText($rStatus)), WATCHDOG_INFO);
       $oid = drupal_substr($orderid, drupal_strlen($settings['order_prefix']));
       $order = commerce_order_load($oid);
 
-      $status = COMMERCE_PAYMENT_STATUS_FAILURE;
-      if (empty($ipn['NCERROR']) || $ipn['NCERROR']=='0') {
-        $status = COMMERCE_PAYMENT_STATUS_SUCCESS;
-      }
-      else{
-        $errMSG = (!empty($ipn['NCERRORPLUS']) ? $ipn['NCERRORPLUS'] : '');
-        watchdog('commerce_postfinance', 'NCERROR (@code) @text', array('@code' => $ipn['NCERROR'], '@text' => $errMSG), WATCHDOG_WARNING);
-      }
-
-      commerce_postfinance_transaction($payment_method, $order, $ipn, $status);
+      commerce_postfinance_transaction($payment_method, $order, $ipn);
 
       return TRUE;
     }
@@ -538,25 +530,39 @@ function ipn_valid($uri = NULL, $debug_ipn = array()) {
  * @param $transaction_status
  *   The status of the transaction.
  */
-function commerce_postfinance_transaction($payment_method, $order, $response, $transaction_status) {
+function commerce_postfinance_transaction($payment_method, $order, $response) {
+
   $transaction = commerce_payment_transaction_new('commerce_postfinance', $order->order_id);
+  $transaction->status = commerce_postfinance_get_commerce_transaction_status($response['STATUS'], $response['NCERROR']);
+
+  $statusTxt = commerce_postfinance_IPNStatusText($response['STATUS']);
+  $ncErr = '';
+  if ($transaction->status == COMMERCE_PAYMENT_STATUS_FAILURE) {
+    if (!empty($response['NCERROR'])) {
+      $arrNC = commerce_postfinance_NCErrorText($response['NCERROR']);
+      $ncErr = $arrNC['nctext'];
+      watchdog('commerce_postfinance', 'NCERROR:@nc: @msgplus', array('@nc' => $response['NCERROR'], '@msgplus' => $ncErr), WATCHDOG_WARNING);
+    }
+    else {
+      watchdog('commerce_postfinance', '@status: @msg', array('@nc' => $response['STATUS'], '@msg' => $statusTxt), WATCHDOG_WARNING);
+    }
+  }
+
   $transaction->instance_id = $payment_method['instance_id'];
   $transaction->amount = $order->commerce_order_total[LANGUAGE_NONE][0]['amount'];
   $transaction->currency_code = $order->commerce_order_total[LANGUAGE_NONE][0]['currency_code'];
   $transaction->remote_id = $response['PAYID'];
+  $transaction->remote_status = $response['STATUS'] . ': ' . $statusTxt . ' (' . $response['NCERROR'] . ':' . $ncErr . ')' ;
 
-  $transaction->status = $transaction_status;
-  if ($transaction_status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
-    $transaction->message = 'Transaction accepted for @orderid';
+  if ($transaction->status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
+    $transaction->message = $statusTxt;
     commerce_payment_redirect_pane_next_page($order);
   }
-  elseif ($transaction_status == COMMERCE_PAYMENT_STATUS_FAILURE) {
-    $transaction->message = 'Error for the transaction  for @orderid';
+  elseif ($transaction->status == COMMERCE_PAYMENT_STATUS_FAILURE) {
+    $transaction->message = $statusTxt;
     commerce_payment_redirect_pane_previous_page($order);
   }
-  $transaction->message_variables = array(
-    '@orderid' => $response['orderID'],
-  );
+
   commerce_payment_transaction_save($transaction);
 }
 
@@ -717,4 +723,580 @@ function commerce_postfinance_shaOUTparams() {
  */
 function commerce_postfinance_shaINparams() {
   return drupal_map_assoc(array('AAVADDRESS', 'AAVCHECK', 'AAVZIP', 'ACCEPTANCE', 'ALIAS', 'AMOUNT', 'BRAND', 'CARDNO', 'CCCTY', 'CN', 'COMPLUS', 'CREATION_STATUS', 'CURRENCY', 'CVCCHECK', 'DCC_COMMPERCENTAGE', 'DCC_CONVAMOUNT', 'DCC_CONVCCY', 'DCC_EXCHRATE', 'DCC_EXCHRATESOURCE', 'DCC_EXCHRATETS', 'DCC_INDICATOR', 'DCC_MARGINPERCENTAGE', 'DCC_VALIDHOURS', 'DIGESTCARDNO', 'ECI', 'ED', 'ENCCARDNO', 'IP', 'IPCTY', 'NBREMAILUSAGE', 'NBRIPUSAGE', 'NBRIPUSAGE_ALLTX', 'NBRUSAGE', 'NCERROR', 'ORDERID', 'PAYID', 'PM', 'SCO_CATEGORY', 'SCORING', 'STATUS', 'SUBSCRIPTION_ID', 'TRXDATE', 'VC'));
+}
+
+
+/**
+ * Returns the commerce status for the remote status.
+ *
+ * @return
+ *   a string
+ */
+function commerce_postfinance_get_commerce_transaction_status($remote_status, $nc_error) {
+  if ($remote_status == 5 || $remote_status == 9) {
+    return COMMERCE_PAYMENT_STATUS_SUCCESS;
+  }
+  return COMMERCE_PAYMENT_STATUS_FAILURE;
+}
+
+/**
+ * Returns a string representation of the IPN status code.
+ *
+ * @return
+ *   an array
+ */
+function commerce_postfinance_IPNStatusText($s) {
+  switch ($s) :
+    case 0: return t('Incomplete or invalid');
+    case 1: return t('Cancelled by customer');
+    case 2: return t('Authorisation declined');
+    case 4: return t('Order stored');
+    case 40: return t('Stored waiting external result');
+    case 41: return t('Waiting for client payment');
+    case 5: return t('Authorised');
+    case 50: return t('Authorized waiting external result');
+    case 51: return t('Authorisation waiting');
+    case 52: return t('Authorisation not known');
+    case 55: return t('Standby');
+    case 56: return t('OK with scheduled payments');
+    case 57: return t('Not OK with scheduled payments');
+    case 59: return t('Authoris. to be requested manually');
+    case 6: return t('Authorised and cancelled');
+    case 61: return t('Author. deletion waiting');
+    case 62: return t('Author. deletion uncertain');
+    case 63: return t('Author. deletion refused');
+    case 64: return t('Authorised and cancelled');
+    case 7: return t('Payment deleted');
+    case 71: return t('Payment deletion pending');
+    case 72: return t('Payment deletion uncertain');
+    case 73: return t('Payment deletion refused');
+    case 74: return t('Payment deleted');
+    case 75: return t('Deletion processed by merchant');
+    case 8: return t('Refund');
+    case 81: return t('Refund pending');
+    case 82: return t('Refund uncertain');
+    case 83: return t('Refund refused');
+    case 84: return t('Payment declined by the acquirer');
+    case 85: return t('Refund processed by merchant');
+    case 9: return t('Payment requested');
+    case 91: return t('Payment processing');
+    case 92: return t('Payment uncertain');
+    case 93: return t('Payment refused');
+    case 94: return t('Refund declined by the acquirer');
+    case 95: return t('Payment processed by merchant');
+    case 99: return t('Being processed');
+
+    default: return t('unkown status code');
+  endswitch;
+}
+
+/**
+ * Returns a string representation of the NC error code.
+ *
+ * @return
+ *   a string
+ */
+function commerce_postfinance_NCErrorText($s) {
+  switch ($s) :
+    case 20001001:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001002:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001003:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001004:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001005:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001006:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001007:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001008:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001009:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 20001010:  return array('retry' => 'yes', 'nctext' => t('Authorisation failed. Please retry.'));
+    case 30001999:  return array('retry' => 'no', 'nctext' => t('Our payment system is currently under maintenance, please try later.'));
+    case 50001005:  return array('retry' => 'no', 'nctext' => t('Expiry date error'));
+    case 50001007:  return array('retry' => 'no', 'nctext' => t('Requested operation code not permitted'));
+    case 50001008:  return array('retry' => 'no', 'nctext' => t('Invalid time limit value'));
+    case 50001010:  return array('retry' => 'no', 'nctext' => t('Invalid input date format'));
+    case 50001013:  return array('retry' => 'no', 'nctext' => t('Unable to parse socket input stream'));
+    case 50001014:  return array('retry' => 'no', 'nctext' => t('Error in parsing stream content'));
+    case 50001015:  return array('retry' => 'no', 'nctext' => t('Currency error'));
+    case 50001016:  return array('retry' => 'no', 'nctext' => t('Transaction still posted at end of wait'));
+    case 50001017:  return array('retry' => 'no', 'nctext' => t('Sync value not compatible with delay value'));
+    case 50001019:  return array('retry' => 'no', 'nctext' => t('Duplicate of a pre-existing transaction'));
+    case 50001020:  return array('retry' => 'no', 'nctext' => t('Acceptance code required for transaction'));
+    case 50001024:  return array('retry' => 'no', 'nctext' => t('Maintenance acquirer differs from original transaction acquirer'));
+    case 50001025:  return array('retry' => 'no', 'nctext' => t('Maintenance merchant differs from original transaction merchant'));
+    case 50001028:  return array('retry' => 'no', 'nctext' => t('Maintenance operation not appropriate for original transaction'));
+    case 50001031:  return array('retry' => 'no', 'nctext' => t('Host application unknown for the transaction'));
+    case 50001032:  return array('retry' => 'no', 'nctext' => t('Unable to perform requested operation with requested currency'));
+    case 50001033:  return array('retry' => 'no', 'nctext' => t('Maintenance card number differs from original transaction card number'));
+    case 50001034:  return array('retry' => 'no', 'nctext' => t('Operation code not permitted'));
+    case 50001035:  return array('retry' => 'no', 'nctext' => t('Exception occurred in socket input stream processing'));
+    case 50001036:  return array('retry' => 'no', 'nctext' => t('Card length does not correspond to an acceptable value for the brand'));
+    case 50001036:  return array('retry' => 'no', 'nctext' => t('Card length does not correspond to an acceptable value for the brand.'));
+    case 50001068:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001069:  return array('retry' => 'no', 'nctext' => t('Invalid check for CardID and Brand'));
+    case 50001070:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001116:  return array('retry' => 'no', 'nctext' => t('Unknown origin IP'));
+    case 50001117:  return array('retry' => 'no', 'nctext' => t('No origin IP detected'));
+    case 50001118:  return array('retry' => 'no', 'nctext' => t('Merchant configuration problem. Please contact support.'));
+    case 10001001:  return array('retry' => 'no', 'nctext' => t('Communication failure'));
+    case 10001002:  return array('retry' => 'no', 'nctext' => t('Communication failure'));
+    case 10001003:  return array('retry' => 'no', 'nctext' => t('Communication failure'));
+    case 10001004:  return array('retry' => 'no', 'nctext' => t('Communication failure'));
+    case 10001005:  return array('retry' => 'no', 'nctext' => t('Communication failure'));
+    case 10001016:  return array('retry' => 'no', 'nctext' => t('Waiting for acquirer feedback'));
+    case 20001001:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001002:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the status of the transaction within one working day. Please check the status later.'));
+    case 20001003:  return array('retry' => 'no', 'nctext' => t('We received an unknown status for the transaction. We will contact your acquirer and update the status of the transaction. Please check the status later.'));
+    case 20001004:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001005:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001006:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001007:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001008:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001009:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001010:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001101:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 20001104:  return array('retry' => 'no', 'nctext' => t('We received an unknown status for the transaction. We will contact your acquirer and update the status of the transaction. Please check the status later.'));
+    case 20001105:  return array('retry' => 'no', 'nctext' => t('We have received an unknown status for the transaction. We shall contact your acquirer and update the transaction status within one working day. Please check the status later.'));
+    case 20001111:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 20001998:  return array('retry' => 'no', 'nctext' => t('We received an unknown status for the transaction. We will contact your acquirer and update the status of the transaction. Please check the status later.'));
+    case 20002001:  return array('retry' => 'no', 'nctext' => t('Bank response origin cannot be checked'));
+    case 20002002:  return array('retry' => 'no', 'nctext' => t('Beneficiary account number has been modified during processing'));
+    case 20002003:  return array('retry' => 'no', 'nctext' => t('Amount has been modified during processing'));
+    case 20002004:  return array('retry' => 'no', 'nctext' => t('Currency has been modified during processing'));
+    case 20002005:  return array('retry' => 'no', 'nctext' => t('No feedback detected from the bank server'));
+    case 30001001:  return array('retry' => 'no', 'nctext' => t('Payment refused by the acquirer'));
+    case 30001002:  return array('retry' => 'no', 'nctext' => t('Duplicate request'));
+    case 30001010:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30001011:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30001012:  return array('retry' => 'no', 'nctext' => t('Card blacklisted - Contact acquirer'));
+    case 30001015:  return array('retry' => 'yes', 'nctext' => t('There has been a connection error to the receiving bank. Please try later or choose another payment method.'));
+    case 30001016:  return array('retry' => 'no', 'nctext' => t('Transmission failure and/or Database error. The transaction could not be properly initialised in the send process (db access failures, etc.)'));
+    case 30001051:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30001054:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30001056:  return array('retry' => 'no', 'nctext' => t('Your merchant\'s acquirer is temporarily unavailable, please try later or choose another payment method.'));
+    case 30001057:  return array('retry' => 'yes', 'nctext' => t('There has been a connection error to the receiving bank. Please try later or choose another payment method.'));
+    case 30001058:  return array('retry' => 'yes', 'nctext' => t('There has been a connection error to the receiving bank. Please try later or choose another payment method.'));
+    case 30001060:  return array('retry' => 'no', 'nctext' => t('Acquirer has indicated a failure during payment processing'));
+    case 30001070:  return array('retry' => 'no', 'nctext' => t('RATEPAY Invalid Response Type (Failure)'));
+    case 30001071:  return array('retry' => 'no', 'nctext' => t('RATEPAY Missing Mandatory status code field (failure)'));
+    case 30001072:  return array('retry' => 'no', 'nctext' => t('RATEPAY Missing Mandatory Result code field (failure)'));
+    case 30001073:  return array('retry' => 'no', 'nctext' => t('RATEPAY Response parsing Failed'));
+    case 30001090:  return array('retry' => 'no', 'nctext' => t('CVC check required by front end and returned invalid by acquirer'));
+    case 30001091:  return array('retry' => 'no', 'nctext' => t('Postcode check required by front end and returned invalid by acquirer'));
+    case 30001092:  return array('retry' => 'no', 'nctext' => t('Address check required by frontend and returned as invalid by acquirer.'));
+    case 30001100:  return array('retry' => 'no', 'nctext' => t('Unauthorised customer country'));
+    case 30001101:  return array('retry' => 'no', 'nctext' => t('IP country differs from card country'));
+    case 30001102:  return array('retry' => 'no', 'nctext' => t('Number of different countries too high'));
+    case 30001103:  return array('retry' => 'no', 'nctext' => t('unauthorised card country'));
+    case 30001104:  return array('retry' => 'no', 'nctext' => t('unauthorised IP address country'));
+    case 30001105:  return array('retry' => 'no', 'nctext' => t('Anonymous proxy'));
+    case 30001110:  return array('retry' => 'no', 'nctext' => t('If the problem persists, please contact Support or go to paysafecard\'s card balance page (https://customer.cc.at.paysafecard.com/psccustomer/GetWelcomePanelServlet?language=en), to see when the amount reserved on your card will be available again.'));
+    case 30001120:  return array('retry' => 'no', 'nctext' => t('IP address on merchant\'s blacklist'));
+    case 30001130:  return array('retry' => 'no', 'nctext' => t('BIN on merchant\'s blacklist'));
+    case 30001131:  return array('retry' => 'no', 'nctext' => t('Wrong BIN for 3xCB'));
+    case 30001140:  return array('retry' => 'no', 'nctext' => t('Card on merchant\'s blacklist'));
+    case 30001141:  return array('retry' => 'no', 'nctext' => t('E-mail blacklisted'));
+    case 30001142:  return array('retry' => 'no', 'nctext' => t('Passenger name blacklisted'));
+    case 30001143:  return array('retry' => 'no', 'nctext' => t('Cardholder name blacklisted'));
+    case 30001144:  return array('retry' => 'no', 'nctext' => t('Passenger name different from owner name'));
+    case 30001145:  return array('retry' => 'no', 'nctext' => t('Time to departure too short'));
+    case 30001149:  return array('retry' => 'no', 'nctext' => t('Card Configured in Card Supplier Limit for another relation (CSL)'));
+    case 30001150:  return array('retry' => 'no', 'nctext' => t('Card not configured in the system for this customer (CSL)'));
+    case 30001151:  return array('retry' => 'no', 'nctext' => t('REF1 not allowed for this relationship (Contract number)'));
+    case 30001152:  return array('retry' => 'no', 'nctext' => t('Card/Supplier Amount limit reached (CSL)'));
+    case 30001153:  return array('retry' => 'no', 'nctext' => t('Card not permitted for this supplier (Date out of contractual limits)'));
+    case 30001154:  return array('retry' => 'no', 'nctext' => t('You have reached the permitted usage limit.'));
+    case 30001155:  return array('retry' => 'no', 'nctext' => t('You have reached the permitted usage limit.'));
+    case 30001156:  return array('retry' => 'no', 'nctext' => t('You have reached the permitted usage limit'));
+    case 30001157:  return array('retry' => 'no', 'nctext' => t('Unauthorised IP country for itinerary'));
+    case 30001158:  return array('retry' => 'no', 'nctext' => t('e-mail usage limit reached'));
+    case 30001159:  return array('retry' => 'no', 'nctext' => t('Unauthorised card country/IP country combination'));
+    case 30001160:  return array('retry' => 'no', 'nctext' => t('Postcode in high-risk group'));
+    case 30001161:  return array('retry' => 'no', 'nctext' => t('generic blacklist match'));
+    case 30001162:  return array('retry' => 'no', 'nctext' => t('Invoicing Address is a PO Box'));
+    case 30001180:  return array('retry' => 'no', 'nctext' => t('maximum scoring reached'));
+    case 30001997:  return array('retry' => 'no', 'nctext' => t('Authorisation cancelled by simulator'));
+    case 30001998:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 30001999:  return array('retry' => 'yes', 'nctext' => t('There has been a connection error with the receiving bank. Please try later or choose another payment method.'));
+    case 30002001:  return array('retry' => 'no', 'nctext' => t('Payment refused by the financial institution'));
+    case 30002001:  return array('retry' => 'no', 'nctext' => t('Payment refused by the financial institution'));
+    case 30021001:  return array('retry' => 'no', 'nctext' => t('Please call the acquirer support call number.'));
+    case 30022001:  return array('retry' => 'no', 'nctext' => t('Payment must be approved by the acquirer prior to execution.'));
+    case 30031001:  return array('retry' => 'no', 'nctext' => t('Invalid merchant number'));
+    case 30041001:  return array('retry' => 'no', 'nctext' => t('Retain card.'));
+    case 30051001:  return array('retry' => 'no', 'nctext' => t('Authorisation declined'));
+    case 30051002:  return array('retry' => 'no', 'nctext' => t('Voor vragen over uw afwijzing kunt u contact opnemen met de @STARTURL@http://www.afterpay.nl/consument-contact@TXTURL@Klantenservice van AfterPay@ENDURL@.'));
+    case 30051009:  return array('retry' => 'no', 'nctext' => t('It is possible that you may not have completed all the required information (correctly) during the order process.'));
+    case 30071001:  return array('retry' => 'no', 'nctext' => t('Retain card - special conditions.'));
+    case 30121001:  return array('retry' => 'no', 'nctext' => t('Invalid transaction'));
+    case 30131001:  return array('retry' => 'no', 'nctext' => t('Invalid amount'));
+    case 30131002:  return array('retry' => 'no', 'nctext' => t('You have reached the permitted limit'));
+    case 30141001:  return array('retry' => 'no', 'nctext' => t('Invalid card number'));
+    case 30151001:  return array('retry' => 'no', 'nctext' => t('Unknown acquiring institution'));
+    case 30171001:  return array('retry' => 'no', 'nctext' => t('Payment method cancelled by the customer.'));
+    case 30171002:  return array('retry' => 'no', 'nctext' => t('The maximum time allowed has elapsed.'));
+    case 30191001:  return array('retry' => 'no', 'nctext' => t('Please try again later.'));
+    case 30201001:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30301001:  return array('retry' => 'no', 'nctext' => t('Invalid format'));
+    case 30311001:  return array('retry' => 'no', 'nctext' => t('Unknown acquirer ID.'));
+    case 30331001:  return array('retry' => 'no', 'nctext' => t('Card expired'));
+    case 30341001:  return array('retry' => 'no', 'nctext' => t('Suspicion of fraud.'));
+    case 30341002:  return array('retry' => 'no', 'nctext' => t('Suspicion of fraud (3rdMan)'));
+    case 30341003:  return array('retry' => 'no', 'nctext' => t('Suspicion of fraud (Perseuss)'));
+    case 30341004:  return array('retry' => 'no', 'nctext' => t('Suspicion of fraud (ETHOCA)'));
+    case 30341005:  return array('retry' => 'no', 'nctext' => t('Suspicion of fraud (Expert)'));
+    case 30381001:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30401001:  return array('retry' => 'no', 'nctext' => t('Invalid function'));
+    case 30411001:  return array('retry' => 'no', 'nctext' => t('Lost card'));
+    case 30431001:  return array('retry' => 'no', 'nctext' => t('Stolen card. Pick up.'));
+    case 30511001:  return array('retry' => 'no', 'nctext' => t('Insufficient funds'));
+    case 30521001:  return array('retry' => 'no', 'nctext' => t('No Authorisation. Please contact your card issuer.'));
+    case 30541001:  return array('retry' => 'no', 'nctext' => t('Card expired'));
+    case 30551001:  return array('retry' => 'no', 'nctext' => t('Invalid PIN'));
+    case 30561001:  return array('retry' => 'no', 'nctext' => t('Card not in authoriser\'s database.'));
+    case 30571001:  return array('retry' => 'no', 'nctext' => t('Transaction not permitted on card'));
+    case 30581001:  return array('retry' => 'no', 'nctext' => t('Transaction not permitted on this terminal'));
+    case 30591001:  return array('retry' => 'no', 'nctext' => t('Suspicion of fraud'));
+    case 30601001:  return array('retry' => 'no', 'nctext' => t('The merchant should contact the acquirer.'));
+    case 30611001:  return array('retry' => 'yes', 'nctext' => t('Amount exceeds card limit'));
+    case 30621001:  return array('retry' => 'no', 'nctext' => t('Restricted card'));
+    case 30631001:  return array('retry' => 'no', 'nctext' => t('Security policy not respected'));
+    case 30641001:  return array('retry' => 'no', 'nctext' => t('Amount changed from ref. transaction.'));
+    case 30681001:  return array('retry' => 'no', 'nctext' => t('The maximum allowed time has elapsed.'));
+    case 30751001:  return array('retry' => 'no', 'nctext' => t('Incorrect PIN entered too many times'));
+    case 30761001:  return array('retry' => 'no', 'nctext' => t('Already disputed by cardholder.'));
+    case 30771001:  return array('retry' => 'no', 'nctext' => t('PIN entry required'));
+    case 30811001:  return array('retry' => 'no', 'nctext' => t('Message flow error'));
+    case 30821001:  return array('retry' => 'no', 'nctext' => t('Authorisation centre unavailable'));
+    case 30831001:  return array('retry' => 'no', 'nctext' => t('Authorisation centre unavailable'));
+    case 30901001:  return array('retry' => 'no', 'nctext' => t('Temporary system shutdown'));
+    case 30911001:  return array('retry' => 'no', 'nctext' => t('Acquirer unavailable'));
+    case 30921001:  return array('retry' => 'no', 'nctext' => t('Invalid card type for acquirer'));
+    case 30941001:  return array('retry' => 'no', 'nctext' => t('Duplicate transaction'));
+    case 30961001:  return array('retry' => 'yes', 'nctext' => t('Processing temporarily not possible'));
+    case 30971001:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 30981001:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 31011001:  return array('retry' => 'no', 'nctext' => t('Unknown acceptance code'));
+    case 31021001:  return array('retry' => 'no', 'nctext' => t('Invalid currency'));
+    case 31031001:  return array('retry' => 'no', 'nctext' => t('Acceptance code missing'));
+    case 31041001:  return array('retry' => 'no', 'nctext' => t('Inactive card'));
+    case 31051001:  return array('retry' => 'no', 'nctext' => t('Merchant not active'));
+    case 31061001:  return array('retry' => 'no', 'nctext' => t('Invalid expiry date'));
+    case 31071001:  return array('retry' => 'no', 'nctext' => t('Interrupted host communication'));
+    case 31081001:  return array('retry' => 'no', 'nctext' => t('Card refused'));
+    case 31091001:  return array('retry' => 'no', 'nctext' => t('Invalid password'));
+    case 31101001:  return array('retry' => 'no', 'nctext' => t('Plafond transaction (majoré du bonus) dépassé'));
+    case 31111001:  return array('retry' => 'no', 'nctext' => t('Plafond mensuel (majoré du bonus) dépassé'));
+    case 31121001:  return array('retry' => 'no', 'nctext' => t('Plafond centre de facturation dépassé'));
+    case 31131001:  return array('retry' => 'no', 'nctext' => t('Plafond entreprise dépassé'));
+    case 31141001:  return array('retry' => 'no', 'nctext' => t('Code MCC du fournisseur non autorisé pour la carte'));
+    case 31151001:  return array('retry' => 'no', 'nctext' => t('Numéro SIRET du fournisseur non autorisé pour la carte'));
+    case 31161001:  return array('retry' => 'no', 'nctext' => t('This is not a valid online bank account'));
+    case 32001004:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 32001105:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 34011001:  return array('retry' => 'no', 'nctext' => t('Bezahlung mit RatePAY nicht möglich.'));
+    case 39991001:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact your acquirer\'s helpdesk.'));
+    case 40001001:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001002:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001003:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001004:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001005:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001006:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001007:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001008:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001009:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001010:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001011:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 40001012:  return array('retry' => 'yes', 'nctext' => t('There has been a connection error with the receiving bank. Please try later or choose another payment method.'));
+    case 40001013:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 40001016:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 40001018:  return array('retry' => 'yes', 'nctext' => t('A technical problem has occurred. Please try again.'));
+    case 40001019:  return array('retry' => 'yes', 'nctext' => t('Sorry, an error has occurred during processing. Please retry the transaction (using the Back button of the browser). If the problem persists, contact your merchant\'s helpdesk.'));
+    case 40001020:  return array('retry' => 'yes', 'nctext' => t('Sorry, an error occurred during processing. Please retry the operation (using the Back button of the browser). If the problem persists, please contact your merchant\'s helpdesk.'));
+    case 40001050:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 40001133:  return array('retry' => 'no', 'nctext' => t('Authentication failed. Incorrect signature for your bank\'s access control server.'));
+    case 40001134:  return array('retry' => 'yes', 'nctext' => t('Authentication failed. Please retry or cancel.'));
+    case 40001135:  return array('retry' => 'yes', 'nctext' => t('Authentication temporarily unavailable. Please retry or cancel.'));
+    case 40001136:  return array('retry' => 'yes', 'nctext' => t('Technical problem with your browser. Please retry or cancel.'));
+    case 40001137:  return array('retry' => 'yes', 'nctext' => t('Your bank is temporarily unavailable. Please try again later or choose another payment method.'));
+    case 40001998:  return array('retry' => 'no', 'nctext' => t('Temporary technical problem. Please retry later.'));
+    case 50001001:  return array('retry' => 'no', 'nctext' => t('Unknown card type'));
+    case 50001002:  return array('retry' => 'no', 'nctext' => t('Card number format check failed for given card number.'));
+    case 50001003:  return array('retry' => 'no', 'nctext' => t('Merchant data error'));
+    case 50001004:  return array('retry' => 'no', 'nctext' => t('Merchant identification missing'));
+    case 50001005:  return array('retry' => 'no', 'nctext' => t('Expiry date error'));
+    case 50001006:  return array('retry' => 'no', 'nctext' => t('Amount is not a number'));
+    case 50001007:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001008:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001009:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001010:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001011:  return array('retry' => 'no', 'nctext' => t('Brand not supported for that merchant'));
+    case 50001012:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001013:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001014:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001015:  return array('retry' => 'no', 'nctext' => t('Invalid currency code'));
+    case 50001016:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001017:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001018:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001019:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001020:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001021:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001022:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001023:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001024:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001025:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001026:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001027:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001028:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001029:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001030:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001031:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001032:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001033:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001034:  return array('retry' => 'no', 'nctext' => t('A technical has problem occurred. Please contact the helpdesk.'));
+    case 50001035:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001036:  return array('retry' => 'no', 'nctext' => t('Incorrect card length for the brand'));
+    case 50001037:  return array('retry' => 'no', 'nctext' => t('Purchasing card number for a standard merchant'));
+    case 50001038:  return array('retry' => 'no', 'nctext' => t('You should use a purchasing card for this transaction.'));
+    case 50001039:  return array('retry' => 'no', 'nctext' => t('Details sent for a non-purchasing card merchant. Please contact the helpdesk.'));
+    case 50001040:  return array('retry' => 'no', 'nctext' => t('Details not sent for a purchasing card transaction. Please contact the helpdesk.'));
+    case 50001041:  return array('retry' => 'no', 'nctext' => t('Payment detail validation failed'));
+    case 50001042:  return array('retry' => 'no', 'nctext' => t('Sum of given transaction amounts (tax, discount, delivery, net, etc.) does not match total.'));
+    case 50001043:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001044:  return array('retry' => 'no', 'nctext' => t('No acquirer configured for this operation'));
+    case 50001045:  return array('retry' => 'no', 'nctext' => t('No UID configured for this operation'));
+    case 50001046:  return array('retry' => 'no', 'nctext' => t('Operation not permitted for the merchant'));
+    case 50001047:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001048:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001049:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001050:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001051:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001052:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001053:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001054:  return array('retry' => 'no', 'nctext' => t('Card number incorrect or incompatible'));
+    case 50001055:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001056:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001057:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001058:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001059:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001060:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001061:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001062:  return array('retry' => 'no', 'nctext' => t('A technical problem has occurred. Please contact the helpdesk.'));
+    case 50001063:  return array('retry' => 'no', 'nctext' => t('Card Issue Number does not correspond to range or is not present'));
+    case 50001064:  return array('retry' => 'no', 'nctext' => t('Start Date invalid or not present'));
+    case 50001066:  return array('retry' => 'no', 'nctext' => t('Invalid CVC code format'));
+    case 50001067:  return array('retry' => 'no', 'nctext' => t('The merchant is not registered for 3D-Secure'));
+    case 50001068:  return array('retry' => 'no', 'nctext' => t('Invalid card number or account number (PAN)'));
+    case 50001069:  return array('retry' => 'no', 'nctext' => t('Invalid CardID and Brand match'));
+    case 50001070:  return array('retry' => 'no', 'nctext' => t('The ECI value is either not supported or conflicts with other transaction data'));
+    case 50001071:  return array('retry' => 'no', 'nctext' => t('Incomplete TRN demat'));
+    case 50001072:  return array('retry' => 'no', 'nctext' => t('Incomplete PAY demat'));
+    case 50001073:  return array('retry' => 'no', 'nctext' => t('No demat APP'));
+    case 50001074:  return array('retry' => 'no', 'nctext' => t('Authorisation period expired'));
+    case 50001075:  return array('retry' => 'no', 'nctext' => t('VERRes was an error message'));
+    case 50001076:  return array('retry' => 'no', 'nctext' => t('DCP amount greater than authorisation amount'));
+    case 50001077:  return array('retry' => 'no', 'nctext' => t('Details negative amount'));
+    case 50001078:  return array('retry' => 'no', 'nctext' => t('Details negative quantity'));
+    case 50001079:  return array('retry' => 'no', 'nctext' => t('Could not decode/decompress received PARes (3D-Secure)'));
+    case 50001080:  return array('retry' => 'no', 'nctext' => t('Received PARes was an error message from ACS (3D-Secure)'));
+    case 50001081:  return array('retry' => 'no', 'nctext' => t('Received PARes format was invalid according to the 3DS specifications (3D-Secure)'));
+    case 50001082:  return array('retry' => 'no', 'nctext' => t('PAReq/PARes reconciliation failure (3D-Secure)'));
+    case 50001084:  return array('retry' => 'no', 'nctext' => t('Maximum amount reached'));
+    case 50001087:  return array('retry' => 'no', 'nctext' => t('This transaction requires authentication. Please check with your bank.'));
+    case 50001090:  return array('retry' => 'no', 'nctext' => t('CVC missing at input, but CVC check requested'));
+    case 50001091:  return array('retry' => 'no', 'nctext' => t('Postcode missing at input, but postcode check requested'));
+    case 50001092:  return array('retry' => 'no', 'nctext' => t('Address missing at input, but Address check requested'));
+    case 50001095:  return array('retry' => 'no', 'nctext' => t('Invalid date of birth'));
+    case 50001096:  return array('retry' => 'no', 'nctext' => t('Invalid commodity code'));
+    case 50001097:  return array('retry' => 'no', 'nctext' => t('The requested currency and brand are incompatible.'));
+    case 50001111:  return array('retry' => 'no', 'nctext' => t('Data validation error'));
+    case 50001113:  return array('retry' => 'no', 'nctext' => t('This order has already been processed.'));
+    case 50001114:  return array('retry' => 'no', 'nctext' => t('Error in accessing the pre-payment check page'));
+    case 50001115:  return array('retry' => 'no', 'nctext' => t('Request not received in secure mode'));
+    case 50001116:  return array('retry' => 'no', 'nctext' => t('Unknown IP address origin'));
+    case 50001117:  return array('retry' => 'no', 'nctext' => t('No IP address origin'));
+    case 50001118:  return array('retry' => 'no', 'nctext' => t('PSPID not found or incorrect'));
+    case 50001119:  return array('retry' => 'no', 'nctext' => t('Password incorrect or disabled due to number of errors'));
+    case 50001120:  return array('retry' => 'no', 'nctext' => t('Invalid currency'));
+    case 50001121:  return array('retry' => 'no', 'nctext' => t('Invalid number of decimals for the currency'));
+    case 50001122:  return array('retry' => 'no', 'nctext' => t('Currency not accepted by the merchant'));
+    case 50001123:  return array('retry' => 'no', 'nctext' => t('Card type not active'));
+    case 50001124:  return array('retry' => 'no', 'nctext' => t('Number of lines doesn\'t match the number of payments'));
+    case 50001125:  return array('retry' => 'no', 'nctext' => t('Format validation error'));
+    case 50001126:  return array('retry' => 'no', 'nctext' => t('Overflow in data capture requests for the original order'));
+    case 50001127:  return array('retry' => 'no', 'nctext' => t('Incorrect original order status'));
+    case 50001128:  return array('retry' => 'no', 'nctext' => t('missing authorisation code for unauthorised order'));
+    case 50001129:  return array('retry' => 'no', 'nctext' => t('Overflow in refunds requests'));
+    case 50001130:  return array('retry' => 'no', 'nctext' => t('Original order access error'));
+    case 50001131:  return array('retry' => 'no', 'nctext' => t('Original history item access error'));
+    case 50001132:  return array('retry' => 'no', 'nctext' => t('The selected Catalogue is empty'));
+    case 50001133:  return array('retry' => 'no', 'nctext' => t('Duplicate request'));
+    case 50001134:  return array('retry' => 'no', 'nctext' => t('Authentication failed. Please retry or cancel.'));
+    case 50001135:  return array('retry' => 'no', 'nctext' => t('Authentication temporarily unavailable. Please retry or cancel.'));
+    case 50001136:  return array('retry' => 'no', 'nctext' => t('Technical problem with your browser. Please retry or cancel.'));
+    case 50001137:  return array('retry' => 'no', 'nctext' => t('Your bank is temporarily unavailable. Please try again later or choose another payment method.'));
+    case 50001150:  return array('retry' => 'no', 'nctext' => t('Fraud Detection: technical error (invalid IP)'));
+    case 50001151:  return array('retry' => 'no', 'nctext' => t('Fraud detection: technical error (IPCTY unknown or error)'));
+    case 50001152:  return array('retry' => 'no', 'nctext' => t('Fraud detection: technical error (CCCTY unknown or error)'));
+    case 50001153:  return array('retry' => 'no', 'nctext' => t('Overflow in redo-authorisation requests'));
+    case 50001170:  return array('retry' => 'no', 'nctext' => t('Dynamic BIN check failed'));
+    case 50001171:  return array('retry' => 'no', 'nctext' => t('Dynamic country check failed'));
+    case 50001172:  return array('retry' => 'no', 'nctext' => t('Amadeus signature error'));
+    case 50001174:  return array('retry' => 'yes', 'nctext' => t('Cardholder Name is too long'));
+    case 50001175:  return array('retry' => 'no', 'nctext' => t('Name contains invalid characters'));
+    case 50001176:  return array('retry' => 'no', 'nctext' => t('Card number is too long'));
+    case 50001177:  return array('retry' => 'no', 'nctext' => t('Card number contains non-numeric info'));
+    case 50001178:  return array('retry' => 'no', 'nctext' => t('Card Number Empty'));
+    case 50001179:  return array('retry' => 'no', 'nctext' => t('CVC too long'));
+    case 50001180:  return array('retry' => 'no', 'nctext' => t('CVC contains non-numeric info'));
+    case 50001181:  return array('retry' => 'no', 'nctext' => t('Expiry date contains non-numeric info'));
+    case 50001182:  return array('retry' => 'no', 'nctext' => t('Invalid expiry month'));
+    case 50001183:  return array('retry' => 'no', 'nctext' => t('Expiry date must be in the future'));
+    case 50001184:  return array('retry' => 'no', 'nctext' => t('SHA Mismatch'));
+    case 50001186:  return array('retry' => 'no', 'nctext' => t('Operation not permitted'));
+    case 50001187:  return array('retry' => 'no', 'nctext' => t('Operation not permitted'));
+    case 50001205:  return array('retry' => 'no', 'nctext' => t('Missing mandatory fields in invoicing address'));
+    case 50001206:  return array('retry' => 'no', 'nctext' => t('Missing mandatory date of birth field.'));
+    case 50001207:  return array('retry' => 'no', 'nctext' => t('Missing required shopping basket details'));
+    case 50001208:  return array('retry' => 'no', 'nctext' => t('Missing social security number'));
+    case 50001209:  return array('retry' => 'no', 'nctext' => t('Invalid country code'));
+    case 50001210:  return array('retry' => 'no', 'nctext' => t('Missing annual salary'));
+    case 50001211:  return array('retry' => 'no', 'nctext' => t('Missing gender'));
+    case 50001212:  return array('retry' => 'no', 'nctext' => t('Missing e-mail'));
+    case 50001213:  return array('retry' => 'no', 'nctext' => t('Missing IP address'));
+    case 50001214:  return array('retry' => 'no', 'nctext' => t('Missing part-payment campaign ID'));
+    case 50001215:  return array('retry' => 'no', 'nctext' => t('Missing invoice number'));
+    case 50001216:  return array('retry' => 'no', 'nctext' => t('The alias must be different to the card number.'));
+    case 50001217:  return array('retry' => 'no', 'nctext' => t('Invalid details for shopping basket calculation'));
+    case 50001218:  return array('retry' => 'no', 'nctext' => t('No Refunds allowed'));
+    case 50001220:  return array('retry' => 'no', 'nctext' => t('Invalid format of phone number'));
+    case 50001221:  return array('retry' => 'no', 'nctext' => t('Invalid ZIP format'));
+    case 50001222:  return array('retry' => 'no', 'nctext' => t('Firstname or/and lastname missing'));
+    case 50001223:  return array('retry' => 'no', 'nctext' => t('Firstname and/or lastname format invalid'));
+    case 50001224:  return array('retry' => 'no', 'nctext' => t('The phone number is missing.'));
+    case 50001225:  return array('retry' => 'no', 'nctext' => t('Invalid email format'));
+    case 50001300:  return array('retry' => 'no', 'nctext' => t('Wrong brand/payment method'));
+    case 50001301:  return array('retry' => 'no', 'nctext' => t('Wrong account number format'));
+    case 50001302:  return array('retry' => 'no', 'nctext' => t('RFP operation code is only permitted with scheduled payments.'));
+    case 50001303:  return array('retry' => 'no', 'nctext' => t('RFP operation code not permitted for a Disputed payment'));
+    case 50001304:  return array('retry' => 'no', 'nctext' => t('RFP operation code not permitted - Unpaid amounts'));
+    case 55555555:  return array('retry' => 'no', 'nctext' => t('An error occurred.'));
+    case 60000001:  return array('retry' => 'no', 'nctext' => t('account number unknown'));
+    case 60000003:  return array('retry' => 'no', 'nctext' => t('not credited dd-mm-yy'));
+    case 60000005:  return array('retry' => 'no', 'nctext' => t('name/number do not match'));
+    case 60000007:  return array('retry' => 'no', 'nctext' => t('account number blocked'));
+    case 60000008:  return array('retry' => 'no', 'nctext' => t('specific direct debit block'));
+    case 60000009:  return array('retry' => 'no', 'nctext' => t('account number WKA'));
+    case 60000010:  return array('retry' => 'no', 'nctext' => t('administrative reason'));
+    case 60000011:  return array('retry' => 'no', 'nctext' => t('account number expired'));
+    case 60000012:  return array('retry' => 'no', 'nctext' => t('no direct debit authorisation'));
+    case 60000013:  return array('retry' => 'no', 'nctext' => t('debit not approved'));
+    case 60000014:  return array('retry' => 'no', 'nctext' => t('double payment'));
+    case 60000018:  return array('retry' => 'no', 'nctext' => t('name/address/city not entered'));
+    case 60001001:  return array('retry' => 'no', 'nctext' => t('no original direct debit for revocation'));
+    case 60001002:  return array('retry' => 'no', 'nctext' => t('payer’s account number format error'));
+    case 60001004:  return array('retry' => 'no', 'nctext' => t('payer’s account at different bank'));
+    case 60001005:  return array('retry' => 'no', 'nctext' => t('payee’s account at different bank'));
+    case 60001006:  return array('retry' => 'no', 'nctext' => t('payee’s account number format error'));
+    case 60001007:  return array('retry' => 'no', 'nctext' => t('payer’s account number blocked'));
+    case 60001008:  return array('retry' => 'no', 'nctext' => t('payer’s account number expired'));
+    case 60001009:  return array('retry' => 'no', 'nctext' => t('payee’s account number expired'));
+    case 60001010:  return array('retry' => 'no', 'nctext' => t('direct debit not possible'));
+    case 60001011:  return array('retry' => 'no', 'nctext' => t('creditor payment not possible'));
+    case 60001012:  return array('retry' => 'no', 'nctext' => t('payer’s account number unknown WKA-number'));
+    case 60001013:  return array('retry' => 'no', 'nctext' => t('payee’s account number unknown WKA-number'));
+    case 60001014:  return array('retry' => 'no', 'nctext' => t('WKA transaction not permitted'));
+    case 60001015:  return array('retry' => 'no', 'nctext' => t('revocation period expired'));
+    case 60001017:  return array('retry' => 'no', 'nctext' => t('incorrect revocation reason'));
+    case 60001018:  return array('retry' => 'no', 'nctext' => t('original run number not numeric'));
+    case 60001019:  return array('retry' => 'no', 'nctext' => t('payment ID incorrect'));
+    case 60001020:  return array('retry' => 'no', 'nctext' => t('amount not numeric'));
+    case 60001021:  return array('retry' => 'no', 'nctext' => t('zero amount not permitted'));
+    case 60001022:  return array('retry' => 'no', 'nctext' => t('negative amount not permitted'));
+    case 60001023:  return array('retry' => 'no', 'nctext' => t('payer and payee giro account number'));
+    case 60001025:  return array('retry' => 'no', 'nctext' => t('processing code (verwerkingscode) incorrect'));
+    case 60001028:  return array('retry' => 'no', 'nctext' => t('revocation not permitted'));
+    case 60001029:  return array('retry' => 'no', 'nctext' => t('guaranteed direct debit on giro account number'));
+    case 60001030:  return array('retry' => 'no', 'nctext' => t('NBC transaction type incorrect'));
+    case 60001031:  return array('retry' => 'no', 'nctext' => t('description too long'));
+    case 60001032:  return array('retry' => 'no', 'nctext' => t('book account number not issued'));
+    case 60001034:  return array('retry' => 'no', 'nctext' => t('book account number incorrect'));
+    case 60001035:  return array('retry' => 'no', 'nctext' => t('payer’s account number not numeric'));
+    case 60001036:  return array('retry' => 'no', 'nctext' => t('payer’s account number not eleven-proof'));
+    case 60001037:  return array('retry' => 'no', 'nctext' => t('payer’s account number not issued'));
+    case 60001039:  return array('retry' => 'no', 'nctext' => t('payer’s account number of DNB/BGC/BLA'));
+    case 60001040:  return array('retry' => 'no', 'nctext' => t('payee’s account number not numeric'));
+    case 60001041:  return array('retry' => 'no', 'nctext' => t('payee’s account number not eleven-proof'));
+    case 60001042:  return array('retry' => 'no', 'nctext' => t('payee’s account number not issued'));
+    case 60001044:  return array('retry' => 'no', 'nctext' => t('payee’s account number unknown'));
+    case 60001050:  return array('retry' => 'no', 'nctext' => t('payee’s name missing'));
+    case 60001051:  return array('retry' => 'no', 'nctext' => t('indicate payee’s bank account number instead of 3102'));
+    case 60001052:  return array('retry' => 'no', 'nctext' => t('no direct debit contract'));
+    case 60001053:  return array('retry' => 'no', 'nctext' => t('amount beyond limits'));
+    case 60001054:  return array('retry' => 'no', 'nctext' => t('selective direct debit block'));
+    case 60001055:  return array('retry' => 'no', 'nctext' => t('original run number unknown'));
+    case 60001057:  return array('retry' => 'no', 'nctext' => t('payer’s name missing'));
+    case 60001058:  return array('retry' => 'no', 'nctext' => t('payee’s account number missing'));
+    case 60001059:  return array('retry' => 'no', 'nctext' => t('restore not permitted'));
+    case 60001060:  return array('retry' => 'no', 'nctext' => t('bank’s reference (navraaggegeven) missing'));
+    case 60001061:  return array('retry' => 'no', 'nctext' => t('BEC/GBK number incorrect'));
+    case 60001062:  return array('retry' => 'no', 'nctext' => t('BEC/GBK code incorrect'));
+    case 60001087:  return array('retry' => 'no', 'nctext' => t('book account number not numeric'));
+    case 60001090:  return array('retry' => 'no', 'nctext' => t('cancelled on request'));
+    case 60001091:  return array('retry' => 'no', 'nctext' => t('cancellation order executed'));
+    case 60001092:  return array('retry' => 'no', 'nctext' => t('cancelled instead of ended'));
+    case 60001093:  return array('retry' => 'no', 'nctext' => t('book account number is a shortened account number'));
+    case 60001094:  return array('retry' => 'no', 'nctext' => t('instructing party and payer account numbers do not match'));
+    case 60001095:  return array('retry' => 'no', 'nctext' => t('payee unknown GBK acceptor'));
+    case 60001097:  return array('retry' => 'no', 'nctext' => t('instructing party and payee account numbers do not match'));
+    case 60001099:  return array('retry' => 'no', 'nctext' => t('clearing not permitted'));
+    case 60001101:  return array('retry' => 'no', 'nctext' => t('payer’s account number has no spaces'));
+    case 60001102:  return array('retry' => 'no', 'nctext' => t('PAN length not numeric'));
+    case 60001103:  return array('retry' => 'no', 'nctext' => t('PAN length outside limits'));
+    case 60001104:  return array('retry' => 'no', 'nctext' => t('track number not numeric'));
+    case 60001105:  return array('retry' => 'no', 'nctext' => t('track number not valid'));
+    case 60001106:  return array('retry' => 'no', 'nctext' => t('PAN sequence number not numeric'));
+    case 60001107:  return array('retry' => 'no', 'nctext' => t('domestic PAN not numeric'));
+    case 60001108:  return array('retry' => 'no', 'nctext' => t('domestic PAN not eleven-proof'));
+    case 60001109:  return array('retry' => 'no', 'nctext' => t('domestic PAN not issued'));
+    case 60001110:  return array('retry' => 'no', 'nctext' => t('foreign PAN not numeric'));
+    case 60001111:  return array('retry' => 'no', 'nctext' => t('card validity date not numeric'));
+    case 60001112:  return array('retry' => 'no', 'nctext' => t('book period number (boekperiodenr) not numeric'));
+    case 60001113:  return array('retry' => 'no', 'nctext' => t('transaction number not numeric'));
+    case 60001114:  return array('retry' => 'no', 'nctext' => t('transaction time not numeric'));
+    case 60001115:  return array('retry' => 'no', 'nctext' => t('invalid transaction time'));
+    case 60001116:  return array('retry' => 'no', 'nctext' => t('transaction date not numeric'));
+    case 60001117:  return array('retry' => 'no', 'nctext' => t('invalid transaction date'));
+    case 60001118:  return array('retry' => 'no', 'nctext' => t('STAN not numeric'));
+    case 60001119:  return array('retry' => 'no', 'nctext' => t('instructing party’s name missing'));
+    case 60001120:  return array('retry' => 'no', 'nctext' => t('foreign amount (bedrag-vv) not numeric'));
+    case 60001122:  return array('retry' => 'no', 'nctext' => t('rate (verrekenkoers) not numeric'));
+    case 60001125:  return array('retry' => 'no', 'nctext' => t('number of decimals (aantaldecimalen) incorrect'));
+    case 60001126:  return array('retry' => 'no', 'nctext' => t('tariff (tarifering) not B/O/S'));
+    case 60001127:  return array('retry' => 'no', 'nctext' => t('domestic costs (kostenbinnenland) not numeric'));
+    case 60001128:  return array('retry' => 'no', 'nctext' => t('domestic costs (kostenbinnenland) not higher than zero'));
+    case 60001129:  return array('retry' => 'no', 'nctext' => t('foreign costs (kostenbuitenland) not numeric'));
+    case 60001130:  return array('retry' => 'no', 'nctext' => t('foreign costs (kostenbuitenland) not higher than zero'));
+    case 60001131:  return array('retry' => 'no', 'nctext' => t('domestic costs (kostenbinnenland) not zero'));
+    case 60001132:  return array('retry' => 'no', 'nctext' => t('foreign costs (kostenbuitenland) not zero'));
+    case 60001134:  return array('retry' => 'no', 'nctext' => t('Euro record not completed'));
+    case 60001135:  return array('retry' => 'no', 'nctext' => t('Customer currency incorrect'));
+    case 60001136:  return array('retry' => 'no', 'nctext' => t('NLG amount not numeric'));
+    case 60001137:  return array('retry' => 'no', 'nctext' => t('NLG amount not higher than zero'));
+    case 60001138:  return array('retry' => 'no', 'nctext' => t('NLG amount not equal to Amount'));
+    case 60001139:  return array('retry' => 'no', 'nctext' => t('NLG amount incorrectly converted'));
+    case 60001140:  return array('retry' => 'no', 'nctext' => t('EUR amount not numeric'));
+    case 60001141:  return array('retry' => 'no', 'nctext' => t('EUR amount not greater than zero'));
+    case 60001142:  return array('retry' => 'no', 'nctext' => t('EUR amount not equal to Amount'));
+    case 60001143:  return array('retry' => 'no', 'nctext' => t('EUR amount incorrectly converted'));
+    case 60001144:  return array('retry' => 'no', 'nctext' => t('Customer currency not NLG'));
+    case 60001145:  return array('retry' => 'no', 'nctext' => t('rate euro-vv (Koerseuro-vv) not numeric'));
+    case 60001146:  return array('retry' => 'no', 'nctext' => t('comma rate euro-vv (Kommakoerseuro-vv) incorrect'));
+    case 60001147:  return array('retry' => 'no', 'nctext' => t('invalid acceptgiro distributor'));
+    case 60001148:  return array('retry' => 'no', 'nctext' => t('Original run number and/or BRN missing'));
+    case 60001149:  return array('retry' => 'no', 'nctext' => t('Amount/Account number/ BRN different'));
+    case 60001150:  return array('retry' => 'no', 'nctext' => t('Direct debit already revoked/restored'));
+    case 60001151:  return array('retry' => 'no', 'nctext' => t('Direct debit already reversed/revoked/restored'));
+    case 60001153:  return array('retry' => 'no', 'nctext' => t('Payer’s account number not known'));
+
+    default: return array('retry' => 'no', 'nctext' => t('unkown status code'));
+  endswitch;
 }
