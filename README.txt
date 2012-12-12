@@ -22,7 +22,7 @@
   - Set the "Digest Encryption" to "SHA-512"
   - Define SHA-X-IN/OUT Keys. All characters are not supported so don't be too freaky.
   - Shop URI represents the start uri on your page for the catalog on button on the post finance pages.
-
+  - It makes sense to give different prefixes per payment-method (PostCard, VISA etc. - you'll see them in the transaciton log)
 
   # POSTFINANCE
   On the postfinance e-payment website got to configuration -> Technical information
