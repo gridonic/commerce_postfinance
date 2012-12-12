@@ -249,7 +249,7 @@ function commerce_postfinance_redirect_form($form, &$form_state, $order, $paymen
 
   $settings = array(
     // Return to the previous page when payment is canceled
-    'cancel_return' => url('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+    'back_return' => url('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
 
     // Return to the payment redirect page for processing successful payments
     'return' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
@@ -404,9 +404,9 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
     //setting urls
     'homeurl' => $settings['home_url'],
     'accepturl' => $settings['return'],
-    'backurl' => $settings['cancel_return'],
-    'cancelurl' => $settings['cancel_return'],
-    'declineurl' => $settings['cancel_return'],
+    'backurl' => $settings['back_return'],
+    'cancelurl' => $settings['home_url'] . $settings['shop_uri'],
+    'declineurl' => $settings['back_return'],
     'catalogurl' => $settings['home_url'] . $settings['shop_uri'],
   );
   $form['#action'] = commerce_postfinance_server_url($settings['server'], $settings['server_encoding']);
@@ -503,6 +503,10 @@ function ipn_valid($uri = NULL, $debug_ipn = array()) {
       $oid = drupal_substr($orderid, drupal_strlen($settings['order_prefix']));
       $order = commerce_order_load($oid);
 
+      if ($rStatus == 1) { //canceled by user
+        commerce_order_status_update($order, 'canceled');
+      }
+
       commerce_postfinance_transaction($payment_method, $order, $ipn);
 
       return TRUE;
@@ -544,7 +548,7 @@ function commerce_postfinance_transaction($payment_method, $order, $response) {
       watchdog('commerce_postfinance', 'NCERROR:@nc: @msgplus', array('@nc' => $response['NCERROR'], '@msgplus' => $ncErr), WATCHDOG_WARNING);
     }
     else {
-      watchdog('commerce_postfinance', '@status: @msg', array('@nc' => $response['STATUS'], '@msg' => $statusTxt), WATCHDOG_WARNING);
+      watchdog('commerce_postfinance', '@status: @msg', array('@status' => $response['STATUS'], '@msg' => $statusTxt), WATCHDOG_WARNING);
     }
   }
 
@@ -555,13 +559,17 @@ function commerce_postfinance_transaction($payment_method, $order, $response) {
   $transaction->remote_status = $response['STATUS'] . ': ' . $statusTxt . ' (' . $response['NCERROR'] . ':' . $ncErr . ')' ;
 
   if ($transaction->status == COMMERCE_PAYMENT_STATUS_SUCCESS) {
-    $transaction->message = $statusTxt;
+    $transaction->message = '@orderid: ' . $statusTxt;
     commerce_payment_redirect_pane_next_page($order);
   }
   elseif ($transaction->status == COMMERCE_PAYMENT_STATUS_FAILURE) {
-    $transaction->message = $statusTxt;
+    $transaction->message = '@orderid: ' . $statusTxt;
     commerce_payment_redirect_pane_previous_page($order);
   }
+
+  $transaction->message_variables = array(
+    '@orderid' => $response['orderID'],
+  );
 
   commerce_payment_transaction_save($transaction);
 }
