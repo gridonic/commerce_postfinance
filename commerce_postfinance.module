@@ -111,6 +111,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
     'PSPID' => '',
     'DefaultPM' => 0,
     'shop_uri' => 'Web-Shop',
+    'cancel_uri' => 'Order-Cancelled',
     'currency_code' => in_array($default_currency, array_keys(commerce_postfinance_default_currencies())) ? $default_currency : 'CHF',
     'language' => 'DE',
     'server' => 'test',
@@ -176,20 +177,27 @@ function commerce_postfinance_settings_form($settings = NULL) {
     '#type' => 'textfield',
     '#title' => t('SHA-X-IN Key'),
     '#description' => t('The Key you entered in the Postfinance e-Payment configuration'),
-    '#default_value' => $settings['payment_security_key']
+    '#default_value' => $settings['payment_security_key'],
+    '#required' => TRUE,
   );
   $form['reply_security_key'] = array(
     '#type' => 'textfield',
     '#title' => t('SHA-X-OUT Key'),
     '#description' => t('The Key you entered in the Postfinance e-Payment configuration'),
-    '#default_value' => $settings['reply_security_key']
+    '#default_value' => $settings['reply_security_key'],
+    '#required' => TRUE,
   );
   $form['shop_uri'] = array(
     '#type' => 'textfield',
     '#title' => t('Shop URI'),
-    '#description' => t('Used as return url Merchant Shop, URI after ' . url('<front>', array('absolute' => TRUE))),
+    '#description' => t('Used as return url for the Merchant Shop button on Postfinance, URI after ' . url('<front>', array('absolute' => TRUE)) . ' (or leave empty to go to this main URL)' ),
     '#default_value' => $settings['shop_uri'],
-    '#required' => TRUE,
+  );
+  $form['cancel_uri'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Cancellation URI'),
+    '#description' => t('Used as return url if order is canceled by the user on Postfinance side, URI after ' . url('<front>', array('absolute' => TRUE)) . ' (or leave empty to go to this main URL)' ),
+    '#default_value' => $settings['cancel_uri'],
   );
   $form['order_prefix'] = array(
     '#type' => 'textfield',
@@ -405,7 +413,7 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
     'homeurl' => $settings['home_url'],
     'accepturl' => $settings['return'],
     'backurl' => $settings['back_return'],
-    'cancelurl' => $settings['home_url'] . $settings['shop_uri'],
+    'cancelurl' => ( array_key_exists('cancel_uri', $settings) ? $settings['home_url'] . $settings['shop_uri'] : $settings['back_return'] ), /* backwards compatible, cancel_uri was introduced in 7.x-1.4 */
     'declineurl' => $settings['back_return'],
     'catalogurl' => $settings['home_url'] . $settings['shop_uri'],
   );
