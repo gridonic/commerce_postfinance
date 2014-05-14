@@ -116,7 +116,7 @@ function commerce_postfinance_settings_form($settings = NULL) {
     'language' => 'DE',
     'server' => 'test',
     'server_encoding' => 'utf',
-    'payment_security' => 'none',
+    'payment_security' => 'sha512',
     'payment_security_key' => '',
     'reply_security_key' => '',
     'order_prefix' => '',
@@ -166,7 +166,6 @@ function commerce_postfinance_settings_form($settings = NULL) {
     '#type' => 'radios',
     '#title' => t('Digest Encryption (SHA-IN and SHA-OUT)'),
     '#options' => array(
-      'none' => t('none'),
       'sha1' => t('SHA-1'),
       'sha256' => t('SHA-256'),
       'sha512' => t('SHA-512'),
@@ -430,11 +429,8 @@ function commerce_postfinance_order_form($form, &$form_state, $order, $settings)
     }
   }
 
-  $shaKey = $settings['payment_security_key'];
-  if (commerce_postfinance_security($shaKey, $settings['payment_security'])) {
-    //add a digest if specified in settings
-    $form['SHASign'] = array('#type' => 'hidden', '#value' => commerce_postfinance_shaDigest($data, $settings, 'OUT'));
-  }
+  // Add the digest.
+  $form['SHASign'] = array('#type' => 'hidden', '#value' => commerce_postfinance_shaDigest($data, $settings, 'OUT'));
 
   $form['submit'] = array(
     '#type' => 'submit',
@@ -493,17 +489,26 @@ function ipn_valid($uri = NULL, $debug_ipn = array()) {
       return FALSE;
     }
 
+    if (empty($ipn['SHASIGN'])) {
+      watchdog('commerce_postfinance', 'SHASIGN not set for an IPN', array(), WATCHDOG_ERROR);
+      return FALSE;
+    }
+
     $payment_method = commerce_payment_method_instance_load($ipn['COMPLUS']);
     //$payment_method = commerce_payment_method_instance_load('commerce_postfinance|commerce_payment_commerce_postfinance');
+    if ($payment_method == FALSE) {
+      watchdog('commerce_postfinance', 'payment_method could not be loaded (COMPLUS: @complus)', array('@complus' => $ipn['COMPLUS']), WATCHDOG_ERROR);
+      return FALSE;
+    }
+
     $settings = $payment_method['settings'];
+    if (!commerce_postfinance_valid_sha_settings($settings)) {
+      watchdog('commerce_postfinance', 'payment_method is not configured properly (@instance_id)', array('@instance_id' => $payment_method['instance_id']), WATCHDOG_ERROR);
+      return FALSE;
+    }
 
     $orderid = $ipn['orderID'];
-
-    $shaDigest = '';
-    $shaKey = $settings['reply_security_key'];
-    if (commerce_postfinance_security($shaKey, $settings['payment_security'])) {
-      $shaDigest = commerce_postfinance_shaDigest($ipn, $settings, 'IN');
-    }
+    $shaDigest = commerce_postfinance_shaDigest($ipn, $settings, 'IN');
 
     if ($ipn['SHASIGN'] == $shaDigest) {
       $rStatus = $ipn['STATUS'];
@@ -580,6 +585,31 @@ function commerce_postfinance_transaction($payment_method, $order, $response) {
   );
 
   commerce_payment_transaction_save($transaction);
+}
+
+/**
+ * Checks the settings array fot sha key and sha algorithm.
+ *
+ * @param array
+ *   a payment method settings array.
+ *
+ * @return bool
+ *   TRUE, if settings seem fine.
+ */
+function commerce_postfinance_valid_sha_settings($settings) {
+  if (!is_array($settings) || empty($settings['payment_security']) || empty($settings['payment_security_key']) || empty($settings['reply_security_key'])) {
+    return FALSE;
+  }
+
+  if (!in_array($settings['payment_security'], array('sha1', 'sha256', 'sha512'))) {
+    return FALSE;
+  }
+
+  if (!strlen($settings['payment_security_key']) || !strlen($settings['reply_security_key'])) {
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 /**
@@ -661,32 +691,6 @@ function commerce_postfinance_shaDigest($data, $settings, $shaAct) {
   /* watchdog('commerce_postfinance', 'received > @name: @val', array('@name' => $shaDigest, '@val' => $shavalue), WATCHDOG_DEBUG); */
 
   return drupal_strtoupper($shaDigest);
-}
-
-/**
- * Decides the algorhytem to be used according to setting.
- *
- * @param $key
- *   The SHA key set in the settings.
- * @param $security
- *   The Security level from the settings.
- *
- * @return
- *   The calculated digest in uppercase.
- */
-function commerce_postfinance_security($key, $security) {
-  if ($key=='') {
-    return FALSE;
-  }
-  switch ($security) {
-    case 'none':
-      return FALSE;
-    case 'sha1':
-    case 'sha256':
-    case 'sha512':
-      return $security;
-  }
-  return FALSE;
 }
 
 /**
