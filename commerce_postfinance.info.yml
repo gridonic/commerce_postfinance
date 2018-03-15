@@ -1,0 +1,7 @@
+name: Commerce Postfinance
+type: module
+description: 'Provides Postfinance as payment gateway for Commerce.'
+package: Commerce (contrib)
+core: 8.x
+dependencies:
+  - commerce:commerce_payment
