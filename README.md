@@ -1,4 +1,3 @@
 # Commerce Postfinance
 
-Adds Postfinance as payment gateway to Commerce2 (Drupal 8).
-
+Provides Commerce integration for the Postfinance payment gateway.

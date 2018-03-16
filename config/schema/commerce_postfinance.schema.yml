@@ -1,0 +1,18 @@
+commerce_postfinance.commerce_payment_gateway.plugin.postfinance_redirect_checkout:
+  type: commerce_payment_gateway_configuration
+  mapping:
+    psp_id:
+      type: string
+      label: 'PSPID'
+    sha_in:
+      type: string
+      label: 'SHA-IN signature'
+    sha_out:
+      type: string
+      label: 'SHA-OUT signature'
+    charset:
+      type: string
+      label: 'Charset'
+    hash_algorithm:
+      type: string
+      label: 'Hash algorithm'
