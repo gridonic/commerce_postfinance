@@ -13,8 +13,11 @@ use Drupal\Core\Form\FormStateInterface;
  *   label = @Translation("Postfinance (Redirect to Postfinance)"),
  *   display_label = @Translation("Postfinance"),
  *    forms = {
- *     "offsite-payment" =
- *   "Drupal\commerce_postfinance\PluginForm\RedirectCheckoutForm",
+ *     "offsite-payment" = "Drupal\commerce_postfinance\PluginForm\RedirectCheckoutForm",
+ *   },
+ *   payment_method_types = {"credit_card"},
+ *   credit_card_types = {
+ *     "mastercard", "visa",
  *   },
  * )
  */
@@ -37,6 +40,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       'sha_out' => '',
       'charset' => static::CHARSET_ISO_8859_1,
       'hash_algorithm' => static::HASH_SHA1,
+      'catalog_url' => '',
     ] + parent::defaultConfiguration();
   }
 
@@ -55,14 +59,16 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
 
     $form['sha_in'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('SHA-IN signature'),
+      '#title' => $this->t('SHA-IN passphrase'),
+      '#description' => $this->t('The passphrase used to calculate the SHA digest for the payment request. Must be equal with the SHA-IN passphrase in the Postfinance backend.'),
       '#default_value' => $this->configuration['sha_in'],
       '#required' => TRUE,
     ];
 
     $form['sha_out'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('SHA-OUT signature'),
+      '#title' => $this->t('SHA-OUT passphrase'),
+      '#description' => $this->t('The passphrase used to calculate the SHA digest for the payment response. Must be equal with the SHA-OUT passphrase in the Postfinance backend.'),
       '#default_value' => $this->configuration['sha_out'],
       '#required' => TRUE,
     ];
@@ -70,7 +76,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
     $form['hash_algorithm'] = [
       '#type' => 'radios',
       '#title' => $this->t('Hashing algorithm'),
-      '#description' => $this->t('The hashing algorithm used for the SHA-IN and SHA-OUT signatures. This must correspond to the algorithm selected in the Postfinance backend.'),
+      '#description' => $this->t('The hashing algorithm used for the SHA-IN and SHA-OUT signatures. Must correspond to the algorithm selected in the Postfinance backend.'),
       '#options' => [
         static::HASH_SHA1 => 'SHA-1',
         static::HASH_SHA256 => 'SHA-256',
@@ -91,6 +97,13 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       '#required' => TRUE,
     ];
 
+    $form['catalog_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Catalog url'),
+      '#description' => $this->t('Enter an absolute url to your catalog page.'),
+      '#default_value' => $this->configuration['catalog_url'],
+    ];
+
     return $form;
   }
 
@@ -105,6 +118,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
     $this->configuration['sha_out'] = $values['sha_out'];
     $this->configuration['hash_algorithm'] = $values['hash_algorithm'];
     $this->configuration['charset'] = $values['charset'];
+    $this->configuration['catalog_url'] = $values['catalog_url'];
   }
 
 }
