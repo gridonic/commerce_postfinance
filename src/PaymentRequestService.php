@@ -16,7 +16,7 @@ use whatwedo\PostFinanceEPayment\PostFinanceEPayment;
  *
  * @package Drupal\commerce_postfinance
  */
-class PaymentRequestService implements PaymentRequestDataInterface {
+class PaymentRequestService {
 
   /**
    * The configuration data from the plugin.
