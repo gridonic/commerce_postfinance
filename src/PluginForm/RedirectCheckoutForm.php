@@ -6,7 +6,6 @@ use Drupal;
 use Drupal\commerce_payment\PluginForm\PaymentOffsiteForm;
 use Drupal\commerce_postfinance\PaymentRequestService;
 use Drupal\Core\Form\FormStateInterface;
-use whatwedo\PostFinanceEPayment\Model\Parameter;
 
 /**
  * A form redirecting to the Postfinance payment endpoint.
@@ -28,17 +27,15 @@ class RedirectCheckoutForm extends PaymentOffsiteForm {
     /** @var \Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout $redirectCheckout */
     $redirectCheckout = $payment->getPaymentGateway()->getPlugin();
     $pluginConfiguration = $redirectCheckout->getConfiguration();
-    $paymentRequestService = new PaymentRequestService($pluginConfiguration, Drupal::service('language_manager'));
-
-    $parameters = array_merge(
-      $paymentRequestService->getParameters($order),
-      [
-        Parameter::ACCEPT_URL => $form['#return_url'],
-        Parameter::CANCEL_URL => $form['#cancel_url'],
-        Parameter::EXCEPTION_URL => $form['#exception_url'],
-        Parameter::DECLINE_URL => $form['#return_url'],
-      ]
-    );
+    $paymentRequestService = new PaymentRequestService($pluginConfiguration, Drupal::service('event_dispatcher'));
+    $language = Drupal::service('language_manager')->getCurrentLanguage();
+    $languageCode = sprintf('%s_%s', $language->getId(), strtoupper($language->getId()));
+    $urls = [
+      'return' => $form['#return_url'],
+      'cancel' => $form['#cancel_url'],
+      'exception' => $form['#exception_url'],
+    ];
+    $parameters = $paymentRequestService->getParameters($order, $languageCode, $urls);
 
     return $this->buildRedirectForm(
       $form,
