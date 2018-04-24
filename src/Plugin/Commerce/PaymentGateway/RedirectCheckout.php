@@ -2,8 +2,11 @@
 
 namespace Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway;
 
+use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
+use Drupal\commerce_postfinance\PaymentResponseService;
 use Drupal\Core\Form\FormStateInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Provides the Postfinance offsite payment gateway.
@@ -119,6 +122,14 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
     $this->configuration['hash_algorithm'] = $values['hash_algorithm'];
     $this->configuration['charset'] = $values['charset'];
     $this->configuration['catalog_url'] = $values['catalog_url'];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function onReturn(OrderInterface $order, Request $request) {
+    $paymentResponseService = new PaymentResponseService($this->entityId, $this->configuration, $this->entityTypeManager);
+    $paymentResponseService->onReturn($order, $request);
   }
 
 }
