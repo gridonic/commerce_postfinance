@@ -4,6 +4,7 @@ namespace Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
+use Drupal\commerce_postfinance\OrderNumberService;
 use Drupal\commerce_postfinance\PaymentResponseService;
 use Drupal\Core\Form\FormStateInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -128,8 +129,28 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
    * {@inheritdoc}
    */
   public function onReturn(OrderInterface $order, Request $request) {
-    $paymentResponseService = new PaymentResponseService($this->entityId, $this->configuration, $this->entityTypeManager);
+    parent::onReturn($order, $request);
+    $paymentResponseService = $this->getPaymentResponseService();
     $paymentResponseService->onReturn($order, $request);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function onCancel(OrderInterface $order, Request $request) {
+    parent::onCancel($order, $request);
+    $paymentResponseService = $this->getPaymentResponseService();
+    $paymentResponseService->onCancel($order, $request);
+  }
+
+  /**
+   * Return the PaymentResponseService object.
+   *
+   * @return \Drupal\commerce_postfinance\PaymentResponseService
+   *   The payment response service.
+   */
+  protected function getPaymentResponseService() {
+    return new PaymentResponseService($this->entityId, $this->configuration, new OrderNumberService(), $this->entityTypeManager);
   }
 
 }

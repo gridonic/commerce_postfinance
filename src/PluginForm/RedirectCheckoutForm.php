@@ -4,6 +4,7 @@ namespace Drupal\commerce_postfinance\PluginForm;
 
 use Drupal;
 use Drupal\commerce_payment\PluginForm\PaymentOffsiteForm;
+use Drupal\commerce_postfinance\OrderNumberService;
 use Drupal\commerce_postfinance\PaymentRequestService;
 use Drupal\Core\Form\FormStateInterface;
 
@@ -20,14 +21,14 @@ class RedirectCheckoutForm extends PaymentOffsiteForm {
   public function buildConfigurationForm(array $form, FormStateInterface $formState) {
     $form = parent::buildConfigurationForm($form, $formState);
 
-    /** @var \Drupal\commerce_payment\Entity\PaymentInterface $payment */
+    /* @var \Drupal\commerce_payment\Entity\PaymentInterface $payment */
     $payment = $this->entity;
     $order = $payment->getOrder();
 
-    /** @var \Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout $redirectCheckout */
+    /* @var \Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout $redirectCheckout */
     $redirectCheckout = $payment->getPaymentGateway()->getPlugin();
     $pluginConfiguration = $redirectCheckout->getConfiguration();
-    $paymentRequestService = new PaymentRequestService($pluginConfiguration, Drupal::service('event_dispatcher'));
+    $paymentRequestService = new PaymentRequestService($pluginConfiguration, new OrderNumberService(), Drupal::service('event_dispatcher'));
     $language = Drupal::service('language_manager')->getCurrentLanguage();
     $languageCode = sprintf('%s_%s', $language->getId(), strtoupper($language->getId()));
     $urls = [

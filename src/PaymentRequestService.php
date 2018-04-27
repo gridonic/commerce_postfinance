@@ -15,7 +15,7 @@ use whatwedo\PostFinanceEPayment\Environment\TestEnvironment;
 use whatwedo\PostFinanceEPayment\PostFinanceEPayment;
 
 /**
- * Provides data required for the payment POST request to Postfinance.
+ * Collects data required for the payment POST request to Postfinance.
  *
  * @package Drupal\commerce_postfinance
  */
@@ -36,16 +36,26 @@ class PaymentRequestService {
   private $eventDispatcher;
 
   /**
+   * The order number service.
+   *
+   * @var \Drupal\commerce_postfinance\OrderNumberService
+   */
+  private $orderNumberService;
+
+  /**
    * PaymentRequestService constructor.
    *
    * @param array $pluginConfiguration
    *   Configuration data from the plugin.
+   * @param \Drupal\commerce_postfinance\OrderNumberService $orderNumberService
+   *   The order number service.
    * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $eventDispatcher
    *   The event dispatcher.
    */
-  public function __construct(array $pluginConfiguration, EventDispatcherInterface $eventDispatcher) {
+  public function __construct(array $pluginConfiguration, OrderNumberService $orderNumberService, EventDispatcherInterface $eventDispatcher) {
     $this->pluginConfiguration = $pluginConfiguration;
     $this->eventDispatcher = $eventDispatcher;
+    $this->orderNumberService = $orderNumberService;
   }
 
   /**
@@ -63,14 +73,10 @@ class PaymentRequestService {
    */
   public function getParameters(OrderInterface $order, $languageCode, array $urls) {
     try {
-      if (!isset($urls['return'])) {
-        throw new PaymentGatewayException("Return URL missing");
-      }
-      if (!isset($urls['cancel'])) {
-        throw new PaymentGatewayException("Cancel URL missing");
-      }
-      if (!isset($urls['exception'])) {
-        throw new PaymentGatewayException("Exception URL missing");
+      foreach (['return', 'cancel', 'exception'] as $url) {
+        if (!isset($urls[$url])) {
+          throw new PaymentGatewayException(sprintf('%s URL is missing', strtoupper($url)));
+        }
       }
       $environment = $this->setupEnvironment($urls);
       $orderPostfinance = $this->setupPostfinanceOrder($order);
@@ -141,7 +147,7 @@ class PaymentRequestService {
    */
   protected function setupPostfinanceOrder(OrderInterface $order) {
     $orderPostfinance = new PostfinanceOrder();
-    $orderPostfinance->setId($order->id())
+    $orderPostfinance->setId($this->orderNumberService->getNumber($order))
       ->setCurrency($order->getTotalPrice()->getCurrencyCode())
       ->setAmount((float) $order->getTotalPrice()->getNumber());
     return $orderPostfinance;
