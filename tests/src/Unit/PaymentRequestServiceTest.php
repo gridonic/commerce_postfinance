@@ -6,8 +6,10 @@ namespace Drupal\Tests\commerce_postfinance\Unit;
 
 use CommerceGuys\Addressing\Address;
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_postfinance\Event\PaymentRequestEvent;
 use Drupal\commerce_postfinance\Event\PostfinanceEvents;
+use Drupal\commerce_postfinance\OrderNumberService;
 use Drupal\commerce_postfinance\PaymentRequestService;
 
 use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
@@ -30,21 +32,17 @@ class PaymentRequestServiceTest extends UnitTestCase {
    */
   private $paymentRequestService;
 
-  protected function setUp() {
-    $this->paymentRequestService = new PaymentRequestService($this->getPluginConfiguration(), $this->getEventDispatcherMock());
-  }
-
   public function test_redirect_url_correct() {
     $pluginConfig = $this->getPluginConfiguration();
-    $paymentRequestService = new PaymentRequestService($pluginConfig, $this->getEventDispatcherMock());
+    $paymentRequestService = new PaymentRequestService($pluginConfig, $this->getOrderNumberServiceMock(), $this->getEventDispatcherMock());
     $this->assertEquals('https://e-payment.postfinance.ch/ncol/test/orderstandard_utf8.asp', $paymentRequestService->getRedirectUrl());
 
     $pluginConfig['mode'] = 'live';
-    $paymentRequestService = new PaymentRequestService($pluginConfig, $this->getEventDispatcherMock());
+    $paymentRequestService = new PaymentRequestService($pluginConfig, $this->getOrderNumberServiceMock(), $this->getEventDispatcherMock());
     $this->assertEquals('https://e-payment.postfinance.ch/ncol/prod/orderstandard_utf8.asp', $paymentRequestService->getRedirectUrl());
 
     $pluginConfig['charset'] = RedirectCheckout::CHARSET_ISO_8859_1;
-    $paymentRequestService = new PaymentRequestService($pluginConfig, $this->getEventDispatcherMock());
+    $paymentRequestService = new PaymentRequestService($pluginConfig, $this->getOrderNumberServiceMock(), $this->getEventDispatcherMock());
     $this->assertEquals('https://e-payment.postfinance.ch/ncol/prod/orderstandard.asp', $paymentRequestService->getRedirectUrl());
   }
 
@@ -80,7 +78,10 @@ class PaymentRequestServiceTest extends UnitTestCase {
 
   public function test_parameters_order_correct() {
     $order = $this->getOrderMock(2467, new Price('20', 'CHF'), 'john.doe@example.com', $this->getAddressData());
-    $parameters = $this->paymentRequestService->getParameters($order, 'de_CH', $this->getUrls());
+    $orderNumberServiceMock = $this->getOrderNumberServiceMock();
+    $orderNumberServiceMock->method('getNumber')->willReturn(2467);
+    $paymentRequestService = new PaymentRequestService($this->getPluginConfiguration(), $orderNumberServiceMock, $this->getEventDispatcherMock());
+    $parameters = $paymentRequestService->getParameters($order, 'de_CH', $this->getUrls());
     $this->assertEquals('Gridonic_TEST', $parameters[Parameter::PSPID]);
     $this->assertEquals(2467, $parameters[Parameter::ORDER_ID]);
     $this->assertEquals('de_CH', $parameters[Parameter::LANGUAGE]);
@@ -92,14 +93,24 @@ class PaymentRequestServiceTest extends UnitTestCase {
     $this->assertArrayHasKey(Parameter::SIGNATURE, $parameters);
   }
 
+  public function test_parameters_urls_not_present_throws_exception() {
+    $order = $this->getOrderMock(1, new Price('20', 'CHF'), 'john.doe@example.com', $this->getAddressData());
+    $this->setExpectedException(PaymentGatewayException::class);
+    $this->paymentRequestService->getParameters($order, 'de_CH', []);
+  }
+
   public function test_event_dispatcher_dispatches_event() {
     $eventDispatcher = $this->getEventDispatcherMock();
     $eventDispatcher->expects($this->once())
       ->method('dispatch')
       ->with(PostfinanceEvents::PAYMENT_REQUEST, $this->isInstanceOf(PaymentRequestEvent::class));
-    $paymentRequestService = new PaymentRequestService($this->getPluginConfiguration(), $eventDispatcher);
+    $paymentRequestService = new PaymentRequestService($this->getPluginConfiguration(), $this->getOrderNumberServiceMock(), $eventDispatcher);
     $order = $this->getOrderMock(1, new Price('20', 'CHF'), 'john.doe@example.com', $this->getAddressData());
     $paymentRequestService->getParameters($order, 'de_CH', $this->getUrls());
+  }
+
+  protected function setUp() {
+    $this->paymentRequestService = new PaymentRequestService($this->getPluginConfiguration(), $this->getOrderNumberServiceMock(), $this->getEventDispatcherMock());
   }
 
   protected function getPluginConfiguration(array $config = []) {
@@ -157,4 +168,7 @@ class PaymentRequestServiceTest extends UnitTestCase {
     return $this->createMock(EventDispatcher::class);
   }
 
+  protected function getOrderNumberServiceMock() {
+    return $this->createMock(OrderNumberService::class);
+  }
 }
