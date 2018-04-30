@@ -7,7 +7,9 @@ use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_postfinance\Event\PaymentRequestEvent;
 use Drupal\commerce_postfinance\Event\PostfinanceEvents;
 use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
+use Drupal\Core\Routing\UrlGeneratorInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use whatwedo\PostFinanceEPayment\Model\Parameter;
 use whatwedo\PostFinanceEPayment\Order\Order as PostfinanceOrder;
 use whatwedo\PostFinanceEPayment\Client\Client;
 use whatwedo\PostFinanceEPayment\Environment\ProductionEnvironment;
@@ -20,6 +22,9 @@ use whatwedo\PostFinanceEPayment\PostFinanceEPayment;
  * @package Drupal\commerce_postfinance
  */
 class PaymentRequestService {
+
+  // Parameter currently missing in \whatwedo\PostFinanceEPayment.
+  const PARAMETER_ZIP = 'OWNERZIP';
 
   /**
    * The configuration data from the plugin.
@@ -43,6 +48,13 @@ class PaymentRequestService {
   private $orderNumberService;
 
   /**
+   * The url generator service.
+   *
+   * @var \Drupal\Core\Routing\UrlGeneratorInterface
+   */
+  private $urlGenerator;
+
+  /**
    * PaymentRequestService constructor.
    *
    * @param array $pluginConfiguration
@@ -51,11 +63,17 @@ class PaymentRequestService {
    *   The order number service.
    * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $eventDispatcher
    *   The event dispatcher.
+   * @param \Drupal\Core\Routing\UrlGeneratorInterface $urlGenerator
+   *   The url generator service.
    */
-  public function __construct(array $pluginConfiguration, OrderNumberService $orderNumberService, EventDispatcherInterface $eventDispatcher) {
+  public function __construct(array $pluginConfiguration,
+                              OrderNumberService $orderNumberService,
+                              EventDispatcherInterface $eventDispatcher,
+                              UrlGeneratorInterface $urlGenerator) {
     $this->pluginConfiguration = $pluginConfiguration;
     $this->eventDispatcher = $eventDispatcher;
     $this->orderNumberService = $orderNumberService;
+    $this->urlGenerator = $urlGenerator;
   }
 
   /**
@@ -87,6 +105,12 @@ class PaymentRequestService {
       $event = new PaymentRequestEvent($order);
       $this->eventDispatcher->dispatch(PostfinanceEvents::PAYMENT_REQUEST, $event);
       $additionalParameters = $event->getParameters();
+      // The parameters EMAIL and OWNERZIP are currently not populated with
+      // the library. Add them manually here. May be removed if this gets fixed.
+      $additionalParameters = array_merge([
+        Parameter::CLIENT_EMAIL => $order->getEmail(),
+        self::PARAMETER_ZIP => $order->getBillingProfile()->get('address')->first()->getPostalCode(),
+      ], $additionalParameters);
       $payment = $ePayment->createPayment($client, $orderPostfinance, $additionalParameters);
       $parameters = $payment->getForm()->getHiddenFields();
       return $parameters;
@@ -128,7 +152,9 @@ class PaymentRequestService {
     }
     $environment->setCharset($config['charset']);
     $environment->setHashAlgorithm($config['hash_algorithm']);
-    $environment->setCatalogUrl($config['catalog_url']);
+    $catalogUrl = $config['node_catalog'] ? $this->urlGenerator->generateFromRoute('entity.node.canonical', ['node' => $config['node_catalog']], ['absolute' => TRUE]) : '';
+    $environment->setCatalogUrl($catalogUrl);
+    $environment->setHomeUrl($this->urlGenerator->generateFromRoute('<front>', [], ['absolute' => TRUE]));
     $environment->setAcceptUrl($urls['return']);
     $environment->setCancelUrl($urls['cancel']);
     $environment->setExceptionUrl($urls['exception']);
@@ -172,7 +198,7 @@ class PaymentRequestService {
     $address = $order->getBillingProfile()->get('address')->first();
     $client->setName(sprintf('%s %s', $address->getGivenName(), $address->getFamilyName()))
       ->setAddress($address->getAddressLine1())
-      ->setTown(sprintf('%s %s', $address->getPostalCode(), $address->getLocality()))
+      ->setTown($address->getLocality())
       ->setCountry($address->getCountryCode())
       ->setLocale($languageCode)
       ->setEmail($order->getEmail());

@@ -100,7 +100,6 @@ class PaymentResponseServiceTest extends UnitTestCase {
     $this->paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
-
   public function test_on_cancel_payment_cancelled() {
     $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
       $orderNumberServiceMock->expects($this->once())
@@ -160,7 +159,7 @@ class PaymentResponseServiceTest extends UnitTestCase {
       'mode' => 'test',
       'charset' => 'utf-8',
       'hash_algorithm' => 'sha1',
-      'catalog_url' => '/url/catalog',
+      'node_catalog' => '1',
     ], $config);
   }
 

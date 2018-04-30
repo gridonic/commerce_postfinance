@@ -16,6 +16,6 @@ commerce_postfinance.commerce_payment_gateway.plugin.postfinance_redirect_checko
     hash_algorithm:
       type: string
       label: 'Hash algorithm'
-    catalog_url:
+    node_catalog:
       type: string
       label: 'Catalog url'

@@ -44,7 +44,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       'sha_out' => '',
       'charset' => static::CHARSET_ISO_8859_1,
       'hash_algorithm' => static::HASH_SHA1,
-      'catalog_url' => '',
+      'node_catalog' => '',
     ] + parent::defaultConfiguration();
   }
 
@@ -64,7 +64,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
     $form['sha_in'] = [
       '#type' => 'textfield',
       '#title' => $this->t('SHA-IN passphrase'),
-      '#description' => $this->t('The passphrase used to calculate the SHA digest for the payment request. Must be equal with the SHA-IN passphrase in the Postfinance backend.'),
+      '#description' => $this->t('The passphrase used to calculate the SHA signature for the payment request. Must be equal with the SHA-IN passphrase in the Postfinance backend.'),
       '#default_value' => $this->configuration['sha_in'],
       '#required' => TRUE,
     ];
@@ -72,7 +72,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
     $form['sha_out'] = [
       '#type' => 'textfield',
       '#title' => $this->t('SHA-OUT passphrase'),
-      '#description' => $this->t('The passphrase used to calculate the SHA digest for the payment response. Must be equal with the SHA-OUT passphrase in the Postfinance backend.'),
+      '#description' => $this->t('The passphrase used to calculate the SHA signature for the payment response. Must be equal with the SHA-OUT passphrase in the Postfinance backend.'),
       '#default_value' => $this->configuration['sha_out'],
       '#required' => TRUE,
     ];
@@ -101,11 +101,13 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       '#required' => TRUE,
     ];
 
-    $form['catalog_url'] = [
-      '#type' => 'textfield',
+    $nodeCatalog = $this->entityTypeManager->getStorage('node')->load($this->configuration['node_catalog']);
+    $form['node_catalog'] = [
+      '#type' => 'entity_autocomplete',
+      '#target_type' => 'node',
       '#title' => $this->t('Catalog url'),
-      '#description' => $this->t('Enter an absolute url to your catalog page.'),
-      '#default_value' => $this->configuration['catalog_url'],
+      '#description' => $this->t('Select the node of your catalog page. The URL is submitted to Postfinance.'),
+      '#default_value' => ($nodeCatalog) ? $nodeCatalog : '',
     ];
 
     return $form;
@@ -122,7 +124,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
     $this->configuration['sha_out'] = $values['sha_out'];
     $this->configuration['hash_algorithm'] = $values['hash_algorithm'];
     $this->configuration['charset'] = $values['charset'];
-    $this->configuration['catalog_url'] = $values['catalog_url'];
+    $this->configuration['node_catalog'] = $values['node_catalog'];
   }
 
   /**

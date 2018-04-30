@@ -28,7 +28,12 @@ class RedirectCheckoutForm extends PaymentOffsiteForm {
     /* @var \Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout $redirectCheckout */
     $redirectCheckout = $payment->getPaymentGateway()->getPlugin();
     $pluginConfiguration = $redirectCheckout->getConfiguration();
-    $paymentRequestService = new PaymentRequestService($pluginConfiguration, new OrderNumberService(), Drupal::service('event_dispatcher'));
+    $paymentRequestService = new PaymentRequestService(
+      $pluginConfiguration,
+      new OrderNumberService(),
+      Drupal::service('event_dispatcher'),
+      Drupal::service('url_generator')
+    );
     $language = Drupal::service('language_manager')->getCurrentLanguage();
     $languageCode = sprintf('%s_%s', $language->getId(), strtoupper($language->getId()));
     $urls = [
