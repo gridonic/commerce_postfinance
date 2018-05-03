@@ -32,81 +32,110 @@ class PaymentResponseServiceTest extends UnitTestCase {
   /**
    * @dataProvider successStatusCodesDataProvider
    */
-  public function test_on_return_payment_successful($statusCode) {
+  public function testOnReturn_PaymentSuccessful_ExpectationsCorrect($statusCodeSuccess) {
     $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $_3, $entityTypeManagerMock) {
       $paymentEntityMock = $this->createMock(EntityInterface::class);
-      $paymentEntityMock->expects($this->once())->method('save');
+      $paymentEntityMock
+        ->expects($this->once())
+        ->method('save');
+
       $entityStorageMock = $this->createMock(EntityStorageInterface::class);
-      $entityStorageMock->expects($this->once())
+      $entityStorageMock
+        ->expects($this->once())
         ->method('create')
         ->willReturn($paymentEntityMock);
-      $entityTypeManagerMock->expects($this->once())
+
+      $entityTypeManagerMock
+        ->expects($this->once())
         ->method('getStorage')
         ->willReturn($entityStorageMock);
     });
+
     $parameters = $this->getPaymentParameters();
     $config = $this->getPluginConfiguration();
-    // Add correct parameters to simulate the "success" case
-    $parameters[Parameter::STATUS] = $statusCode; // 5 or 9 are valid success codes
+    $parameters[Parameter::STATUS] = $statusCodeSuccess;
     $parameters[Parameter::SIGNATURE] = $this->calculateSignature($parameters, $config['sha_out'], $config['hash_algorithm']);
+
     $paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
   /**
    * @dataProvider errorStatusCodesDataProvider
    */
-  public function test_on_return_payment_error($statusCode) {
+  public function testOnReturn_PaymentErrorOrDeclined_ExpectationsCorrectAndExceptionThrown($statusCodeError) {
     $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
-      $orderNumberServiceMock->expects($this->once())
+      $orderNumberServiceMock
+        ->expects($this->once())
         ->method('increaseMinorNumber');
+
       $paymentEntityMock = $this->createMock(EntityInterface::class);
-      $paymentEntityMock->expects($this->once())->method('save');
+      $paymentEntityMock
+        ->expects($this->once())
+        ->method('save');
+
       $entityStorageMock = $this->createMock(EntityStorageInterface::class);
-      $entityStorageMock->expects($this->once())
+      $entityStorageMock
+        ->expects($this->once())
         ->method('create')
         ->willReturn($paymentEntityMock);
-      $entityTypeManagerMock->expects($this->once())
+
+      $entityTypeManagerMock
+        ->expects($this->once())
         ->method('getStorage')
         ->willReturn($entityStorageMock);
     });
+
     $parameters = $this->getPaymentParameters();
     $config = $this->getPluginConfiguration();
-    $parameters[Parameter::STATUS] = $statusCode;
+    $parameters[Parameter::STATUS] = $statusCodeError;
     $parameters[Parameter::SIGNATURE] = $this->calculateSignature($parameters, $config['sha_out'], $config['hash_algorithm']);
+
     $this->setExpectedException(PaymentGatewayException::class);
     $paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
-  public function test_on_return_parameter_missing_throws_exception() {
+  public function testOnReturn_MissingPostSaleParameter_ThrowsException() {
     $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
-      $orderNumberServiceMock->expects($this->never())
+      $orderNumberServiceMock
+        ->expects($this->never())
         ->method('increaseMinorNumber');
-      $entityTypeManagerMock->expects($this->never())
+
+      $entityTypeManagerMock
+        ->expects($this->never())
         ->method('getStorage');
     });
+
     $parameters = $this->getPaymentParameters();
+
     // We want a correct signature for this test to be sure we don't fail with the internal InvalidSignatureException
     $config = $this->getPluginConfiguration();
     $parameters[Parameter::SIGNATURE] = $this->calculateSignature($parameters, $config['sha_out'], $config['hash_algorithm']);
+
     unset($parameters[array_rand($parameters)]);
+
     $this->setExpectedException(InvalidResponseException::class);
     $paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
-  public function test_on_return_parameter_signature_mismatch_throws_exception() {
-    // The signature is not correct, each parameter is initialized with some dummy value
+  public function testOnReturn_IncorrectSignature_ThrowsException() {
+    // Note that the signature is not correct - each parameter is initialized with some dummy value
     $parameters = $this->getPaymentParameters();
+
     $this->setExpectedException(InvalidResponseException::class);
     $this->paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
   public function test_on_cancel_payment_cancelled() {
     $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
-      $orderNumberServiceMock->expects($this->once())
+      $orderNumberServiceMock
+        ->expects($this->once())
         ->method('increaseMinorNumber');
-      $entityTypeManagerMock->expects($this->never())
+
+      $entityTypeManagerMock
+        ->expects($this->never())
         ->method('getStorage');
     });
+
     $paymentResponseService->onCancel($this->getOrderMock(), $this->getRequestMock());
   }
 
@@ -127,9 +156,11 @@ class PaymentResponseServiceTest extends UnitTestCase {
     $pluginConfig = $this->getPluginConfiguration();
     $orderNumberServiceMock = $this->getOrderNumberServiceMock();
     $entityTypeManagerMock = $this->getEntityTypeManagerMock();
+
     if (is_callable($dependencyManipulator)) {
       $dependencyManipulator($paymentGatewayId, $pluginConfig, $orderNumberServiceMock, $entityTypeManagerMock);
     }
+
     return new PaymentResponseService($paymentGatewayId, $pluginConfig, $orderNumberServiceMock, $entityTypeManagerMock);
   }
 
@@ -148,6 +179,7 @@ class PaymentResponseServiceTest extends UnitTestCase {
   protected function getRequestMock(array $queryParameters = []) {
     $requestMock = $this->createMock(Request::class);
     $requestMock->query = new ParameterBag($queryParameters);
+
     return $requestMock;
   }
 
@@ -168,7 +200,9 @@ class PaymentResponseServiceTest extends UnitTestCase {
     foreach (Parameter::$postSaleParameters as $key) {
       $parameters[$key] = 1;
     }
+
     $parameters[Parameter::CURRENCY] = 'CHF';
+
     return $parameters;
   }
 
@@ -182,12 +216,14 @@ class PaymentResponseServiceTest extends UnitTestCase {
     $string = '';
     $p = Parameter::$postSaleParameters;
     sort($p);
+
     foreach ($p as $key) {
       if ($key === Parameter::SIGNATURE || !isset($parameters[$key]) || $parameters[$key] === '') {
         continue;
       }
       $string .= sprintf('%s=%s%s', $key, $parameters[$key], $shaOut);
     }
+
     return strtoupper(hash($hashAlgorithm, $string));
   }
 }

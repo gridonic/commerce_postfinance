@@ -30,6 +30,7 @@ class OrderNumberService {
     if ($minorNumber = $order->getData(self::KEY_NUMBER_MINOR)) {
       return sprintf('%s-%s', $order->id(), $minorNumber);
     }
+
     return $order->id();
   }
 
@@ -43,6 +44,7 @@ class OrderNumberService {
    */
   public function increaseMinorNumber(OrderInterface $order) {
     $minorNumber = $order->getData(self::KEY_NUMBER_MINOR);
+
     if ($minorNumber === NULL) {
       $minorNumber = 1;
     }
@@ -50,6 +52,7 @@ class OrderNumberService {
       $minorNumber = (int) $minorNumber;
       $minorNumber++;
     }
+
     $order->setData(self::KEY_NUMBER_MINOR, $minorNumber);
     $order->save();
   }

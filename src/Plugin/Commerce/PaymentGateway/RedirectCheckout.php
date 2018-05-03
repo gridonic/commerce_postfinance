@@ -118,7 +118,9 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
    */
   public function submitConfigurationForm(array &$form, FormStateInterface $formState) {
     parent::submitConfigurationForm($form, $formState);
+
     $values = $formState->getValue($form['#parents']);
+
     $this->configuration['psp_id'] = $values['psp_id'];
     $this->configuration['sha_in'] = $values['sha_in'];
     $this->configuration['sha_out'] = $values['sha_out'];
@@ -132,6 +134,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
    */
   public function onReturn(OrderInterface $order, Request $request) {
     parent::onReturn($order, $request);
+
     $paymentResponseService = $this->getPaymentResponseService();
     $paymentResponseService->onReturn($order, $request);
   }
@@ -141,6 +144,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
    */
   public function onCancel(OrderInterface $order, Request $request) {
     parent::onCancel($order, $request);
+
     $paymentResponseService = $this->getPaymentResponseService();
     $paymentResponseService->onCancel($order, $request);
   }

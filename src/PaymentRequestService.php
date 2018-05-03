@@ -9,7 +9,6 @@ use Drupal\commerce_postfinance\Event\PostfinanceEvents;
 use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
 use Drupal\Core\Routing\UrlGeneratorInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
-use whatwedo\PostFinanceEPayment\Model\Parameter;
 use whatwedo\PostFinanceEPayment\Order\Order as PostfinanceOrder;
 use whatwedo\PostFinanceEPayment\Client\Client;
 use whatwedo\PostFinanceEPayment\Environment\ProductionEnvironment;
@@ -17,14 +16,11 @@ use whatwedo\PostFinanceEPayment\Environment\TestEnvironment;
 use whatwedo\PostFinanceEPayment\PostFinanceEPayment;
 
 /**
- * Collects data required for the payment POST request to Postfinance.
+ * Service collecting data required for the payment request to Postfinance.
  *
  * @package Drupal\commerce_postfinance
  */
 class PaymentRequestService {
-
-  // Parameter currently missing in \whatwedo\PostFinanceEPayment.
-  const PARAMETER_ZIP = 'OWNERZIP';
 
   /**
    * The configuration data from the plugin.
@@ -90,12 +86,12 @@ class PaymentRequestService {
    *   The parameters.
    */
   public function getParameters(OrderInterface $order, $languageCode, array $urls) {
-    try {
-      foreach (['return', 'cancel', 'exception'] as $url) {
-        if (!isset($urls[$url])) {
-          throw new PaymentGatewayException(sprintf('%s URL is missing', strtoupper($url)));
-        }
+    foreach (['return', 'cancel', 'exception'] as $url) {
+      if (!isset($urls[$url])) {
+        throw new \InvalidArgumentException(sprintf('%s URL is missing', strtoupper($url)));
       }
+    }
+    try {
       $environment = $this->setupEnvironment($urls);
       $orderPostfinance = $this->setupPostfinanceOrder($order);
       $client = $this->setupClient($order, $languageCode);
@@ -105,14 +101,10 @@ class PaymentRequestService {
       $event = new PaymentRequestEvent($order);
       $this->eventDispatcher->dispatch(PostfinanceEvents::PAYMENT_REQUEST, $event);
       $additionalParameters = $event->getParameters();
-      // The parameters EMAIL and OWNERZIP are currently not populated with
-      // the library. Add them manually here. May be removed if this gets fixed.
-      $additionalParameters = array_merge([
-        Parameter::CLIENT_EMAIL => $order->getEmail(),
-        self::PARAMETER_ZIP => $order->getBillingProfile()->get('address')->first()->getPostalCode(),
-      ], $additionalParameters);
+
       $payment = $ePayment->createPayment($client, $orderPostfinance, $additionalParameters);
       $parameters = $payment->getForm()->getHiddenFields();
+
       return $parameters;
     }
     catch (\Exception $e) {
@@ -130,6 +122,7 @@ class PaymentRequestService {
     $config = $this->pluginConfiguration;
     $env = $config['mode'] === 'live' ? 'prod' : 'test';
     $endpoint = $config['charset'] === RedirectCheckout::CHARSET_UTF_8 ? 'orderstandard_utf8.asp' : 'orderstandard.asp';
+
     return "https://e-payment.postfinance.ch/ncol/$env/$endpoint";
   }
 
@@ -144,12 +137,14 @@ class PaymentRequestService {
    */
   protected function setupEnvironment(array $urls) {
     $config = $this->pluginConfiguration;
+
     if ($config['mode'] === 'live') {
       $environment = new ProductionEnvironment($config['psp_id'], $config['sha_in'], $config['sha_out']);
     }
     else {
       $environment = new TestEnvironment($config['psp_id'], $config['sha_in'], $config['sha_out']);
     }
+
     $environment->setCharset($config['charset']);
     $environment->setHashAlgorithm($config['hash_algorithm']);
     $catalogUrl = $config['node_catalog'] ? $this->urlGenerator->generateFromRoute('entity.node.canonical', ['node' => $config['node_catalog']], ['absolute' => TRUE]) : '';
@@ -159,6 +154,7 @@ class PaymentRequestService {
     $environment->setCancelUrl($urls['cancel']);
     $environment->setExceptionUrl($urls['exception']);
     $environment->setDeclineUrl($urls['return']);
+
     return $environment;
   }
 
@@ -176,6 +172,7 @@ class PaymentRequestService {
     $orderPostfinance->setId($this->orderNumberService->getNumber($order))
       ->setCurrency($order->getTotalPrice()->getCurrencyCode())
       ->setAmount((float) $order->getTotalPrice()->getNumber());
+
     return $orderPostfinance;
   }
 
@@ -196,12 +193,15 @@ class PaymentRequestService {
     $client = new Client();
     /** @var \Drupal\address\Plugin\Field\FieldType\AddressItem $address */
     $address = $order->getBillingProfile()->get('address')->first();
+
     $client->setName(sprintf('%s %s', $address->getGivenName(), $address->getFamilyName()))
       ->setAddress($address->getAddressLine1())
+      ->setZip($address->getPostalCode())
       ->setTown($address->getLocality())
       ->setCountry($address->getCountryCode())
       ->setLocale($languageCode)
       ->setEmail($order->getEmail());
+
     return $client;
   }
 

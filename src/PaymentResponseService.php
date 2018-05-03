@@ -74,14 +74,12 @@ class PaymentResponseService {
   }
 
   /**
-   * Handle the "return" request.
+   * Handle the "return" request (success or error).
    *
    * @param \Drupal\commerce_order\Entity\OrderInterface $order
    *   A commerce order.
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   Request object.
-   *
-   * @throws \Drupal\Core\Entity\EntityStorageException
    */
   public function onReturn(OrderInterface $order, Request $request) {
     $environment = $this->setupEnvironment();
@@ -89,28 +87,11 @@ class PaymentResponseService {
     try {
       $response = $ePayment->getResponse($request->query->all());
       if ($response->hasError()) {
-        switch ($response->getStatus()) {
-          case 0:
-          case PaymentStatus::INCOMPLETE:
-            $this->createCommercePayment($order, $response, 'incomplete');
-            break;
-
-          case PaymentStatus::DECLINED:
-            $this->createCommercePayment($order, $response, 'declined');
-            break;
-
-          default:
-            $this->createCommercePayment($order, $response, 'error');
-        }
-        // The PaymentGatewayException will display a warning and the user may
-        // retry the payment. As Postfinance won't process the same order number
-        // again, we increase the minor number.
-        $this->orderNumberService->increaseMinorNumber($order);
-        throw new PaymentGatewayException('Payment incomplete or declined');
+        $this->handleResponseError($order, $response);
       }
-      // Payment successful.
-      $this->createCommercePayment($order, $response, 'completed');
-      $this->storePaymentDetailsInOrder($order, $request);
+      else {
+        $this->handleResponseSuccess($order, $response, $request);
+      }
     }
     catch (NotValidSignatureException $e) {
       throw new InvalidResponseException('Signature mismatch, possible attempt to fraud the payment request data');
@@ -152,9 +133,10 @@ class PaymentResponseService {
    * @throws \Drupal\Core\Entity\EntityStorageException
    */
   protected function createCommercePayment(OrderInterface $order, Response $response, $state) {
-    $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
+    $paymentStorage = $this->entityTypeManager->getStorage('commerce_payment');
     $amount = new Price($response->getAmount(), $response->getCurrency());
-    $payment = $payment_storage->create(
+
+    $payment = $paymentStorage->create(
         [
           'state' => $state,
           'amount' => $amount,
@@ -164,6 +146,7 @@ class PaymentResponseService {
           'remote_state' => $response->getStatus(),
         ]
     );
+
     $payment->save();
   }
 
@@ -175,6 +158,7 @@ class PaymentResponseService {
    */
   protected function setupEnvironment() {
     $config = $this->pluginConfiguration;
+
     if ($config['mode'] === 'live') {
       $environment = new ProductionEnvironment($config['psp_id'], $config['sha_in'], $config['sha_out']);
     }
@@ -183,6 +167,7 @@ class PaymentResponseService {
     }
     $environment->setCharset($config['charset']);
     $environment->setHashAlgorithm($config['hash_algorithm']);
+
     return $environment;
   }
 
@@ -199,6 +184,59 @@ class PaymentResponseService {
   protected function storePaymentDetailsInOrder(OrderInterface $order, Request $request) {
     $order->setData(sprintf('postfinance_payment_%s', time()), $request->query->all());
     $order->save();
+  }
+
+  /**
+   * Handle successful payment.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   A commerce order.
+   * @param \whatwedo\PostFinanceEPayment\Response\Response $response
+   *   Postfinance Response object.
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   Drupal's request object.
+   *
+   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   */
+  protected function handleResponseSuccess(OrderInterface $order, Response $response, Request $request) {
+    $this->createCommercePayment($order, $response, 'completed');
+    $this->storePaymentDetailsInOrder($order, $request);
+  }
+
+  /**
+   * Handle payment if errors occurred.
+   *
+   * Create a commerce_payment with the returned error status. Increase a
+   * minor number of the order so that the payment will be processed
+   * again by Postfinance with the next payment request.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   A commerce order.
+   * @param \whatwedo\PostFinanceEPayment\Response\Response $response
+   *   Postfinance response object.
+   *
+   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   */
+  protected function handleResponseError(OrderInterface $order, Response $response) {
+    switch ($response->getStatus()) {
+      case 0:
+      case PaymentStatus::INCOMPLETE:
+        $this->createCommercePayment($order, $response, 'incomplete');
+        break;
+
+      case PaymentStatus::DECLINED:
+        $this->createCommercePayment($order, $response, 'declined');
+        break;
+
+      default:
+        $this->createCommercePayment($order, $response, 'error');
+    }
+
+    $this->orderNumberService->increaseMinorNumber($order);
+
+    throw new PaymentGatewayException('Payment incomplete or declined');
   }
 
 }
