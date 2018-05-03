@@ -1,0 +1,10 @@
+{
+  "name": "drupal/commerce_postfinance",
+  "type": "drupal-module",
+  "description": "Provides Commerce integration for Postfinance",
+  "homepage": "https://drupal.org/project/commerce_postfinance",
+  "license": "GPL-2.0+",
+  "require": {
+    "drupal/commerce": "~2"
+  }
+}
