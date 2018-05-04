@@ -8,10 +8,23 @@ where the user is able to pay with all activated payment methods, such as
 
 ## Installation
 
-Since this module is not yet released on Drupal, the installation is slightly 
-different than usual:
+Since this module is not yet released on Drupal, we need to tell Composer
+where to find it:
 
-TODO: Add installation instructions.
+Add the following entry in the `repositories` section of your `composer.json`:
+
+```
+"commerce_postfinance": {
+    "type": "vcs",
+    "url": "https://github.com/gridonic/commerce_postfinance"
+}
+```
+
+Run the `composer require gridonic/commerce_postfinance` command.
+
+This should install the module to `web/modules/contrib/commerce_postfinance`.
+Enable the module in Drupal and create a new payment gateway of type
+*Postfinance (Redirect to Postfinance)*.
 
 ## Configuration
 
