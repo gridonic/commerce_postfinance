@@ -119,8 +119,8 @@ class PaymentRequestServiceTest extends UnitTestCase {
   }
 
   public function testParameters_DispatchEventToCollectAdditionalParameters_EventDispatcherCalled() {
-    $paymentRequestService = $this->getPaymentRequestService(function($_1, $_2, $eventDispatcher, $_4) {
-      $eventDispatcher
+    $paymentRequestService = $this->getPaymentRequestService(function($_1, $_2, $eventDispatcherMock, $_4) {
+      $eventDispatcherMock
         ->expects($this->once())
         ->method('dispatch')
         ->with(PostfinanceEvents::PAYMENT_REQUEST, $this->isInstanceOf(PaymentRequestEvent::class));

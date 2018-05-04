@@ -1,10 +1,12 @@
 {
-  "name": "drupal/commerce_postfinance",
+  "name": "gridonic/commerce_postfinance",
   "type": "drupal-module",
   "description": "Provides Commerce integration for Postfinance",
   "homepage": "https://drupal.org/project/commerce_postfinance",
   "license": "GPL-2.0+",
+  "keywords": ["drupal", "commerce", "postfinance"],
   "require": {
-    "drupal/commerce": "~2"
+    "drupal/commerce": "~2",
+    "whatwedo/postfinance-e-payment": "^1.1"
   }
 }

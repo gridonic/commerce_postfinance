@@ -125,7 +125,7 @@ class PaymentResponseServiceTest extends UnitTestCase {
     $this->paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
-  public function test_on_cancel_payment_cancelled() {
+  public function testOnCancel_PaymentCancelled_NoPaymentGetsCreated() {
     $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
       $orderNumberServiceMock
         ->expects($this->once())

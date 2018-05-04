@@ -42,7 +42,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       'psp_id' => '',
       'sha_in' => '',
       'sha_out' => '',
-      'charset' => static::CHARSET_ISO_8859_1,
+      'charset' => static::CHARSET_UTF_8,
       'hash_algorithm' => static::HASH_SHA1,
       'node_catalog' => '',
     ] + parent::defaultConfiguration();
@@ -94,8 +94,8 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       '#type' => 'radios',
       '#title' => $this->t('Charset'),
       '#options' => [
-        static::CHARSET_ISO_8859_1 => 'ISO 8859 1',
         static::CHARSET_UTF_8 => 'UTF-8',
+        static::CHARSET_ISO_8859_1 => 'ISO 8859 1',
       ],
       '#default_value' => $this->configuration['charset'],
       '#required' => TRUE,
@@ -106,7 +106,7 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       '#type' => 'entity_autocomplete',
       '#target_type' => 'node',
       '#title' => $this->t('Catalog url'),
-      '#description' => $this->t('Select the node of your catalog page. The URL is submitted to Postfinance.'),
+      '#description' => $this->t('Select a node representing the catalog page.'),
       '#default_value' => ($nodeCatalog) ? $nodeCatalog : '',
     ];
 
