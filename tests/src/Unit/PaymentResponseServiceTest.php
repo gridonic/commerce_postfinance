@@ -5,13 +5,16 @@ namespace Drupal\Tests\commerce_postfinance\Unit;
 // @codingStandardsIgnoreFile
 
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_payment\Entity\Payment;
 use Drupal\commerce_payment\Exception\InvalidResponseException;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
-use Drupal\commerce_postfinance\OrderNumberService;
+use Drupal\commerce_payment\PaymentStorageInterface;
+use Drupal\commerce_postfinance\OrderIdMappingService;
 use Drupal\commerce_postfinance\PaymentResponseService;
+use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\ParameterBag;
 use Symfony\Component\HttpFoundation\Request;
@@ -32,17 +35,17 @@ class PaymentResponseServiceTest extends UnitTestCase {
   /**
    * @dataProvider successStatusCodesDataProvider
    */
-  public function testOnReturn_PaymentSuccessful_ExpectationsCorrect($statusCodeSuccess) {
-    $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $_3, $entityTypeManagerMock) {
-      $paymentEntityMock = $this->createMock(EntityInterface::class);
+  public function testOnReturn_PaymentSuccessful_PaymentGetsCreated($statusCodeSuccess) {
+    $paymentResponseService = $this->getPaymentResponseService(function ($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock) {
+      $paymentEntityMock = $this->createMock(Payment::class);
       $paymentEntityMock
         ->expects($this->once())
         ->method('save');
 
-      $entityStorageMock = $this->createMock(EntityStorageInterface::class);
+      $entityStorageMock = $this->createMock(PaymentStorageInterface::class);
       $entityStorageMock
         ->expects($this->once())
-        ->method('create')
+        ->method('loadByRemoteId')
         ->willReturn($paymentEntityMock);
 
       $entityTypeManagerMock
@@ -60,29 +63,47 @@ class PaymentResponseServiceTest extends UnitTestCase {
   }
 
   /**
-   * @dataProvider errorStatusCodesDataProvider
+   * @dataProvider partiallySuccessStatusCodesDataProvider
    */
-  public function testOnReturn_PaymentErrorOrDeclined_ExpectationsCorrectAndExceptionThrown($statusCodeError) {
-    $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
-      $orderNumberServiceMock
-        ->expects($this->once())
-        ->method('increaseMinorNumber');
-
-      $paymentEntityMock = $this->createMock(EntityInterface::class);
+  public function testOnReturn_PaymentPartiallySuccessful_PaymentGetsCreated($statusCodePartialSuccess) {
+    $paymentResponseService = $this->getPaymentResponseService(function ($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock) {
+      $paymentEntityMock = $this->createMock(Payment::class);
       $paymentEntityMock
         ->expects($this->once())
         ->method('save');
 
-      $entityStorageMock = $this->createMock(EntityStorageInterface::class);
+      $entityStorageMock = $this->createMock(PaymentStorageInterface::class);
       $entityStorageMock
         ->expects($this->once())
-        ->method('create')
+        ->method('loadByRemoteId')
         ->willReturn($paymentEntityMock);
 
       $entityTypeManagerMock
         ->expects($this->once())
         ->method('getStorage')
         ->willReturn($entityStorageMock);
+    });
+
+    $parameters = $this->getPaymentParameters();
+    $config = $this->getPluginConfiguration();
+    $parameters[Parameter::STATUS] = $statusCodePartialSuccess;
+    $parameters[Parameter::SIGNATURE] = $this->calculateSignature($parameters, $config['sha_out'], $config['hash_algorithm']);
+
+    $paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
+  }
+
+  /**
+   * @dataProvider errorStatusCodesDataProvider
+   */
+  public function testOnReturn_PaymentErrorOrDeclined_RemoteOrderIdMinorGetsIncreasedAndNoPaymentIsCreated($statusCodeError) {
+    $paymentResponseService = $this->getPaymentResponseService(function ($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock) {
+      $orderIdMappingServiceMock
+        ->expects($this->once())
+        ->method('increaseRemoteOrderIdMinor');
+
+      $entityTypeManagerMock
+        ->expects($this->never())
+        ->method('getStorage');
     });
 
     $parameters = $this->getPaymentParameters();
@@ -95,10 +116,10 @@ class PaymentResponseServiceTest extends UnitTestCase {
   }
 
   public function testOnReturn_MissingPostSaleParameter_ThrowsException() {
-    $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
-      $orderNumberServiceMock
+    $paymentResponseService = $this->getPaymentResponseService(function ($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock) {
+      $orderIdMappingServiceMock
         ->expects($this->never())
-        ->method('increaseMinorNumber');
+        ->method('increaseRemoteOrderIdMinor');
 
       $entityTypeManagerMock
         ->expects($this->never())
@@ -125,11 +146,11 @@ class PaymentResponseServiceTest extends UnitTestCase {
     $this->paymentResponseService->onReturn($this->getOrderMock(), $this->getRequestMock($parameters));
   }
 
-  public function testOnCancel_PaymentCancelled_NoPaymentGetsCreated() {
-    $paymentResponseService = $this->getPaymentResponseService(function ($_1, $_2, $orderNumberServiceMock, $entityTypeManagerMock) {
-      $orderNumberServiceMock
+  public function testOnCancel_PaymentCancelled_RemoteOrderIdMinorGetsIncreasedAndNoPaymentIsCreated() {
+    $paymentResponseService = $this->getPaymentResponseService(function ($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock) {
+      $orderIdMappingServiceMock
         ->expects($this->once())
-        ->method('increaseMinorNumber');
+        ->method('increaseRemoteOrderIdMinor');
 
       $entityTypeManagerMock
         ->expects($this->never())
@@ -137,6 +158,10 @@ class PaymentResponseServiceTest extends UnitTestCase {
     });
 
     $paymentResponseService->onCancel($this->getOrderMock(), $this->getRequestMock());
+  }
+
+  public function partiallySuccessStatusCodesDataProvider() {
+    return [[51], [52], [53], [54], [55], [56], [57], [58], [59], [91], [92], [99]];
   }
 
   public function successStatusCodesDataProvider() {
@@ -152,33 +177,34 @@ class PaymentResponseServiceTest extends UnitTestCase {
   }
 
   protected function getPaymentResponseService($dependencyManipulator = NULL) {
-    $paymentGatewayId = 1;
-    $pluginConfig = $this->getPluginConfiguration();
-    $orderNumberServiceMock = $this->getOrderNumberServiceMock();
-    $entityTypeManagerMock = $this->getEntityTypeManagerMock();
+    $redirectCheckoutMock = $this->createMock(RedirectCheckout::class);
+    $redirectCheckoutMock
+      ->method('getConfiguration')
+      ->willReturn($this->getPluginConfiguration());
+
+    $redirectCheckoutMock
+      ->method('getEntityId')
+      ->willReturn(1);
+
+    $orderIdMappingServiceMock = $this->createMock(OrderIdMappingService::class);
+    $entityTypeManagerMock = $this->createMock(EntityTypeManagerInterface::class);
+    $loggerChannelMock = $this->createMock(LoggerChannelInterface::class);
 
     if (is_callable($dependencyManipulator)) {
-      $dependencyManipulator($paymentGatewayId, $pluginConfig, $orderNumberServiceMock, $entityTypeManagerMock);
+      $dependencyManipulator($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock);
     }
 
-    return new PaymentResponseService($paymentGatewayId, $pluginConfig, $orderNumberServiceMock, $entityTypeManagerMock);
-  }
-
-  protected function getOrderNumberServiceMock() {
-    return $this->createMock(OrderNumberService::class);
-  }
-
-  protected function getEntityTypeManagerMock() {
-    return $this->createMock(EntityTypeManagerInterface::class);
+    return new PaymentResponseService($redirectCheckoutMock, $orderIdMappingServiceMock, $entityTypeManagerMock, $loggerChannelMock);
   }
 
   protected function getOrderMock() {
     return $this->createMock(OrderInterface::class);
   }
 
-  protected function getRequestMock(array $queryParameters = []) {
+  protected function getRequestMock(array $parameters = []) {
     $requestMock = $this->createMock(Request::class);
-    $requestMock->query = new ParameterBag($queryParameters);
+    $requestMock->query = new ParameterBag($parameters);
+    $requestMock->request = new ParameterBag($parameters);
 
     return $requestMock;
   }

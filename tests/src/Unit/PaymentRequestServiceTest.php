@@ -9,12 +9,14 @@ use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_postfinance\Event\PaymentRequestEvent;
 use Drupal\commerce_postfinance\Event\PostfinanceEvents;
-use Drupal\commerce_postfinance\OrderNumberService;
+use Drupal\commerce_postfinance\OrderIdMappingService;
 use Drupal\commerce_postfinance\PaymentRequestService;
 
 use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
 use Drupal\commerce_price\Price;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Language\Language;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Routing\UrlGeneratorInterface;
 use Drupal\profile\Entity\ProfileInterface;
 use Drupal\Tests\UnitTestCase;
@@ -55,28 +57,28 @@ class PaymentRequestServiceTest extends UnitTestCase {
 
   public function testParameters_AmountAndCurrencyFromOrder_CorrectParameters() {
     $order = $this->getOrderMock(1, new Price('100', 'CHF'));
-    $parameters = $this->paymentRequestService->getParameters($order, 'en_EN', $this->getUrls());
+    $parameters = $this->paymentRequestService->getParameters($order, $this->getOffsitePaymentFormData());
     $this->assertEquals(10000, $parameters[Parameter::AMOUNT]);
     $this->assertEquals('CHF', $parameters[Parameter::CURRENCY]);
 
     $order = $this->getOrderMock(1, new Price('15.95', 'USD'));
-    $parameters = $this->paymentRequestService->getParameters($order, 'en_EN', $this->getUrls());
+    $parameters = $this->paymentRequestService->getParameters($order, $this->getOffsitePaymentFormData());
     $this->assertEquals(1595, $parameters[Parameter::AMOUNT]);
     $this->assertEquals('USD', $parameters[Parameter::CURRENCY]);
 
     $order = $this->getOrderMock(1, new Price('0.1', 'EUR'));
-    $parameters = $this->paymentRequestService->getParameters($order, 'en_EN', $this->getUrls());
+    $parameters = $this->paymentRequestService->getParameters($order, $this->getOffsitePaymentFormData());
     $this->assertEquals(10, $parameters[Parameter::AMOUNT]);
     $this->assertEquals('EUR', $parameters[Parameter::CURRENCY]);
 
     $order = $this->getOrderMock(1, new Price('20.99', 'USD'));
-    $parameters = $this->paymentRequestService->getParameters($order, 'en_EN', $this->getUrls());
+    $parameters = $this->paymentRequestService->getParameters($order, $this->getOffsitePaymentFormData());
     $this->assertEquals(2099, $parameters[Parameter::AMOUNT]);
   }
 
   public function testParameters_CustomerRelatedParameters_CorrectParameters() {
     $order = $this->getOrderMock(1, NULL, 'john.doe@example.com', $this->getAddressData());
-    $parameters = $this->paymentRequestService->getParameters($order, 'de_CH', $this->getUrls());
+    $parameters = $this->paymentRequestService->getParameters($order, $this->getOffsitePaymentFormData());
 
     $this->assertEquals('John Doe', $parameters[Parameter::CLIENT_NAME]);
     $this->assertEquals('Aarbergergasse 40', $parameters[Parameter::CLIENT_ADDRESS]);
@@ -87,9 +89,9 @@ class PaymentRequestServiceTest extends UnitTestCase {
   }
 
   public function testParameters_GeneralParameters_CorrectParameters() {
-    $paymentRequestService = $this->getPaymentRequestService(function ($_1, $orderNumberServiceMock, $_3, $urlGeneratorMock) {
-      $orderNumberServiceMock
-        ->method('getNumber')
+    $paymentRequestService = $this->getPaymentRequestService(function ($config, $orderIdMappingServiceMock, $eventDispatcherMock, $urlGeneratorMock, $languageManagerMock) {
+      $orderIdMappingServiceMock
+        ->method('getRemoteOrderId')
         ->willReturn(2467);
 
       $urlGeneratorMock
@@ -98,11 +100,11 @@ class PaymentRequestServiceTest extends UnitTestCase {
     });
 
     $order = $this->getOrderMock(2467, new Price('20', 'CHF'), 'john.doe@example.com', []);
-    $parameters = $paymentRequestService->getParameters($order, 'de_CH', $this->getUrls());
+    $parameters = $paymentRequestService->getParameters($order, $this->getOffsitePaymentFormData());
 
     $this->assertEquals('Gridonic_TEST', $parameters[Parameter::PSPID]);
     $this->assertEquals(2467, $parameters[Parameter::ORDER_ID]);
-    $this->assertEquals('de_CH', $parameters[Parameter::LANGUAGE]);
+    $this->assertEquals('en_EN', $parameters[Parameter::LANGUAGE]);
     $this->assertEquals('https://gridonic.ch', $parameters[Parameter::CATALOG_URL]);
     $this->assertEquals('https://gridonic.ch', $parameters[Parameter::HOME_URL]);
     $this->assertEquals('/url/return', $parameters[Parameter::ACCEPT_URL]);
@@ -113,20 +115,15 @@ class PaymentRequestServiceTest extends UnitTestCase {
     $this->assertArrayHasKey(Parameter::SIGNATURE, $parameters);
   }
 
-  public function testParameters_ReturnUrlsNotPresent_ThrowsException() {
-    $this->setExpectedException(\InvalidArgumentException::class);
-    $this->paymentRequestService->getParameters($this->getOrderMock(), 'de_CH', []);
-  }
-
   public function testParameters_DispatchEventToCollectAdditionalParameters_EventDispatcherCalled() {
-    $paymentRequestService = $this->getPaymentRequestService(function($_1, $_2, $eventDispatcherMock, $_4) {
+    $paymentRequestService = $this->getPaymentRequestService(function($config, $orderIdMappingServiceMock, $eventDispatcherMock, $urlGeneratorMock, $languageManagerMock) {
       $eventDispatcherMock
         ->expects($this->once())
         ->method('dispatch')
         ->with(PostfinanceEvents::PAYMENT_REQUEST, $this->isInstanceOf(PaymentRequestEvent::class));
     });
 
-    $paymentRequestService->getParameters($this->getOrderMock(), 'de_CH', $this->getUrls());
+    $paymentRequestService->getParameters($this->getOrderMock(), $this->getOffsitePaymentFormData());
   }
 
   protected function setUp() {
@@ -143,15 +140,21 @@ class PaymentRequestServiceTest extends UnitTestCase {
    */
   protected function getPaymentRequestService($dependencyManipulator = NULL) {
     $config = $this->getPluginConfiguration();
-    $orderNumberServiceMock = $this->getOrderNumberServiceMock();
-    $eventDispatcherMock = $this->getEventDispatcherMock();
-    $urlGeneratorMock = $this->getUrlGeneratorMock();
+    $orderIdMappingServiceMock = $this->createMock(OrderIdMappingService::class);
+    $eventDispatcherMock = $this->createMock(EventDispatcher::class);
+
+    $urlGeneratorMock = $this->createMock(UrlGeneratorInterface::class);
+
+    $languageManagerMock = $this->createMock(LanguageManagerInterface::class);
+    $languageManagerMock
+      ->method('getCurrentLanguage')
+      ->willReturn(new Language(['id' => 'en']));
 
     if (is_callable($dependencyManipulator)) {
-      $dependencyManipulator($config, $orderNumberServiceMock, $eventDispatcherMock, $urlGeneratorMock);
+      $dependencyManipulator($config, $orderIdMappingServiceMock, $eventDispatcherMock, $urlGeneratorMock, $languageManagerMock);
     }
 
-    return new PaymentRequestService($config, $orderNumberServiceMock, $eventDispatcherMock, $urlGeneratorMock);
+    return new PaymentRequestService($config, $orderIdMappingServiceMock, $eventDispatcherMock, $urlGeneratorMock, $languageManagerMock);
   }
 
   protected function getPluginConfiguration(array $config = []) {
@@ -177,11 +180,11 @@ class PaymentRequestServiceTest extends UnitTestCase {
     ], $data);
   }
 
-  protected function getUrls() {
+  protected function getOffsitePaymentFormData() {
     return [
-      'return' => '/url/return',
-      'cancel' => '/url/cancel',
-      'exception' => '/url/exception',
+      '#return_url' => '/url/return',
+      '#cancel_url' => '/url/cancel',
+      '#exception_url' => '/url/exception',
     ];
   }
 
@@ -209,31 +212,23 @@ class PaymentRequestServiceTest extends UnitTestCase {
       ->willReturn($addressList);
 
     $order = $this->createMock(OrderInterface::class);
+
     $order
       ->method('id')
       ->willReturn($orderId);
+
     $order
       ->method('getTotalPrice')
       ->willReturn($price);
+
     $order
       ->method('getBillingProfile')
       ->willReturn($billingProfile);
+
     $order
       ->method('getEmail')
       ->willReturn($email);
 
     return $order;
-  }
-
-  protected function getEventDispatcherMock() {
-    return $this->createMock(EventDispatcher::class);
-  }
-
-  protected function getOrderNumberServiceMock() {
-    return $this->createMock(OrderNumberService::class);
-  }
-
-  protected function getUrlGeneratorMock() {
-    return $this->createMock(UrlGeneratorInterface::class);
   }
 }

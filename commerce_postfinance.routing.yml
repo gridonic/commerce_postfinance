@@ -1,0 +1,8 @@
+commerce_postfinance.ipn:
+  path: 'commerce_postfinance/payment'
+  defaults:
+    _controller: '\Drupal\commerce_postfinance\Controller\IpnController::handlePostPayment'
+  requirements:
+    _permission: 'access content'
+  options:
+    no_cache: 'TRUE'
