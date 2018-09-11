@@ -2,6 +2,7 @@ commerce_postfinance.ipn:
   path: 'commerce_postfinance/payment'
   defaults:
     _controller: '\Drupal\commerce_postfinance\Controller\IpnController::handlePostPayment'
+    _disable_route_normalizer: 'TRUE'
   requirements:
     _permission: 'access content'
   options:

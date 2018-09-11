@@ -9,7 +9,7 @@ use Drupal\commerce_order\Entity\OrderInterface;
  *
  * Postfinance does not allow to process the same order ID multiple times.
  * If a payment fails due to errors or canceling, the following retrying payment
- * must get a new order ID so that the payment can be processed again.
+ * must get a new remote order ID so that the payment can be processed again.
  *
  * @package Drupal\commerce_postfinance
  */
@@ -58,7 +58,7 @@ class OrderIdMappingService {
   }
 
   /**
-   * Get the internal order id from the given remote order ID.
+   * Get the commerce order ID from the given remote order ID.
    *
    * @param string $remoteOrderId
    *   The remote order ID.
