@@ -7,6 +7,9 @@ use Drupal\commerce_postfinance\OrderIdMappingService;
 use Drupal\commerce_postfinance\PaymentResponseService;
 use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -19,6 +22,40 @@ use Symfony\Component\HttpFoundation\Response;
  * @package Drupal\commerce_postfinance\Controller
  */
 class IpnController extends ControllerBase {
+
+  /**
+   * Drupal's logger channel factory.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
+   */
+  private $loggerChannelFactory;
+
+  /**
+   * Drupal's event dispatcher.
+   *
+   * @var \Symfony\Component\EventDispatcher\EventDispatcherInterface
+   */
+  private $eventDispatcher;
+
+  /**
+   * IpnController constructor.
+   *
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerChannelFactory
+   *   Drupal's logger factory.
+   * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $eventDispatcher
+   *   Drupal's event dispatcher.
+   */
+  public function __construct(LoggerChannelFactoryInterface $loggerChannelFactory, EventDispatcherInterface $eventDispatcher) {
+    $this->loggerChannelFactory = $loggerChannelFactory;
+    $this->eventDispatcher = $eventDispatcher;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static($container->get('logger.factory'), $container->get('event_dispatcher'));
+  }
 
   /**
    * Handle a post-payment request from Postfinance.
@@ -58,7 +95,8 @@ class IpnController extends ControllerBase {
       $redirectCheckout,
       new OrderIdMappingService(),
       $this->entityTypeManager,
-      $this->logger()
+      $this->logger(),
+      $this->eventDispatcher
     );
 
     try {
@@ -155,7 +193,7 @@ class IpnController extends ControllerBase {
    *   The logger channel.
    */
   protected function logger() {
-    return $this->getLogger('commerce_postfinance');
+    return $this->loggerChannelFactory->get('commerce_postfinance');
   }
 
 }

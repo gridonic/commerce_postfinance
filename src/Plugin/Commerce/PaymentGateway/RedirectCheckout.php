@@ -171,7 +171,8 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       $this,
       new OrderIdMappingService(),
       $this->entityTypeManager,
-      Drupal::service('logger.factory')->get('commerce_postfinance')
+      Drupal::service('logger.factory')->get('commerce_postfinance'),
+      Drupal::service('event_dispatcher')
     );
   }
 

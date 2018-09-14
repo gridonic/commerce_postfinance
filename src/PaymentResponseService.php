@@ -5,10 +5,14 @@ namespace Drupal\commerce_postfinance;
 use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_payment\Exception\InvalidResponseException;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
+use Drupal\commerce_postfinance\Event\PaymentResponseEvent;
+use Drupal\commerce_postfinance\Event\PostfinanceEvents;
 use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
 use Drupal\commerce_price\Price;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use whatwedo\PostFinanceEPayment\Environment\ProductionEnvironment;
 use whatwedo\PostFinanceEPayment\Environment\TestEnvironment;
@@ -53,6 +57,13 @@ class PaymentResponseService {
   private $logger;
 
   /**
+   * The event dispatcher.
+   *
+   * @var \Symfony\Component\EventDispatcher\EventDispatcherInterface
+   */
+  private $eventDispatcher;
+
+  /**
    * PaymentResponseService constructor.
    *
    * @param \Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout $redirectCheckout
@@ -63,16 +74,20 @@ class PaymentResponseService {
    *   Drupal's entity type manager.
    * @param \Drupal\Core\Logger\LoggerChannelInterface $loggerChannel
    *   A logger channel for this module.
+   * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $eventDispatcher
+   *   Drupal's event dispatcher.
    */
   public function __construct(RedirectCheckout $redirectCheckout,
                               OrderIdMappingService $orderNumberMappingService,
                               EntityTypeManagerInterface $entityTypeManager,
-                              LoggerChannelInterface $loggerChannel
+                              LoggerChannelInterface $loggerChannel,
+                              EventDispatcherInterface $eventDispatcher
     ) {
     $this->redirectCheckout = $redirectCheckout;
     $this->orderNumberMappingService = $orderNumberMappingService;
     $this->entityTypeManager = $entityTypeManager;
     $this->logger = $loggerChannel;
+    $this->eventDispatcher = $eventDispatcher;
   }
 
   /**
@@ -126,6 +141,8 @@ class PaymentResponseService {
    */
   public function onCancel(OrderInterface $order, Request $request) {
     $this->orderNumberMappingService->increaseRemoteOrderIdMinor($order);
+    $parameters = ($request->getMethod() === 'GET') ? $request->query->all() : $request->request->all();
+    $this->dispatchEvent($order, $parameters);
   }
 
   /**
@@ -140,6 +157,7 @@ class PaymentResponseService {
    *
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    * @throws \Drupal\Core\Entity\EntityStorageException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   protected function saveCommercePayment(OrderInterface $order, Response $response, $state) {
     /* @var \Drupal\commerce_payment\PaymentStorage $paymentStorage */
@@ -186,21 +204,6 @@ class PaymentResponseService {
   }
 
   /**
-   * Store the payment data returned from Postfinance in the commerce order.
-   *
-   * @param \Drupal\commerce_order\Entity\OrderInterface $order
-   *   A commerce order.
-   * @param array $parameters
-   *   Parameters from the transaction feedback.
-   *
-   * @throws \Drupal\Core\Entity\EntityStorageException
-   */
-  protected function storePaymentDetailsInOrder(OrderInterface $order, array $parameters) {
-    $order->setData(sprintf('commerce_postfinance_payment_%s', time()), $parameters);
-    $order->save();
-  }
-
-  /**
    * Handle successful payment.
    *
    * @param \Drupal\commerce_order\Entity\OrderInterface $order
@@ -212,10 +215,11 @@ class PaymentResponseService {
    *
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    * @throws \Drupal\Core\Entity\EntityStorageException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   protected function handleResponseSuccess(OrderInterface $order, Response $response, array $parameters) {
     $this->saveCommercePayment($order, $response, 'completed');
-    $this->storePaymentDetailsInOrder($order, $parameters);
+    $this->dispatchEvent($order, $parameters);
   }
 
   /**
@@ -236,6 +240,7 @@ class PaymentResponseService {
    *
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    * @throws \Drupal\Core\Entity\EntityStorageException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   protected function handleResponsePartiallySuccess(OrderInterface $order, Response $response, array $parameters) {
     $this->logger->info('Received a partially successful payment response for order %order: %details', [
@@ -244,7 +249,7 @@ class PaymentResponseService {
     ]);
 
     $this->saveCommercePayment($order, $response, 'pending');
-    $this->storePaymentDetailsInOrder($order, $parameters);
+    $this->dispatchEvent($order, $parameters);
   }
 
   /**
@@ -269,8 +274,21 @@ class PaymentResponseService {
     ]);
 
     $this->orderNumberMappingService->increaseRemoteOrderIdMinor($order);
+    $this->dispatchEvent($order, $parameters);
 
     throw new PaymentGatewayException('Payment incomplete or declined');
+  }
+
+  /**
+   * Dispatch the PaymentResponseEvent.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   A commerce order.
+   * @param array $parameters
+   *   The post-payment parameters.
+   */
+  protected function dispatchEvent(OrderInterface $order, array $parameters) {
+    $this->eventDispatcher->dispatch(PostfinanceEvents::PAYMENT_RESPONSE, new PaymentResponseEvent($order, $parameters));
   }
 
 }

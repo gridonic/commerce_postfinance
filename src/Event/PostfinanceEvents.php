@@ -18,4 +18,13 @@ final class PostfinanceEvents {
    */
   const PAYMENT_REQUEST = 'commerce_postfinance.payment_request';
 
+  /**
+   * Event fired after receiving a request from Postfinance.
+   *
+   * @Event
+   *
+   * @see \Drupal\commerce_postfinance\Event\PaymentResponseEvent
+   */
+  const PAYMENT_RESPONSE = 'commerce_postfinance.payment_response';
+
 }

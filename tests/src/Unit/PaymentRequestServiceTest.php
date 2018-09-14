@@ -6,7 +6,6 @@ namespace Drupal\Tests\commerce_postfinance\Unit;
 
 use CommerceGuys\Addressing\Address;
 use Drupal\commerce_order\Entity\OrderInterface;
-use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_postfinance\Event\PaymentRequestEvent;
 use Drupal\commerce_postfinance\Event\PostfinanceEvents;
 use Drupal\commerce_postfinance\OrderIdMappingService;
