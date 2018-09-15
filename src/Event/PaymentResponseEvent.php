@@ -49,6 +49,16 @@ class PaymentResponseEvent extends Event {
   }
 
   /**
+   * Get the commerce order entity.
+   *
+   * @return \Drupal\commerce_order\Entity\OrderInterface
+   *   The commerce order entity.
+   */
+  public function getOrder() {
+    return $this->order;
+  }
+
+  /**
    * Get the post-sale parameters.
    *
    * @return array
