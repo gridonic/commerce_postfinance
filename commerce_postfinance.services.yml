@@ -1,0 +1,5 @@
+services:
+  commerce_postfinance.payment_response_subscriber:
+    class: Drupal\commerce_postfinance\EventSubscriber\PaymentResponseSubscriber
+    tags:
+    - { name: 'event_subscriber' }

@@ -94,7 +94,7 @@ class IpnController extends ControllerBase {
     $paymentResponseService = new PaymentResponseService(
       $redirectCheckout,
       new OrderIdMappingService(),
-      $this->entityTypeManager,
+      $this->entityTypeManager(),
       $this->logger(),
       $this->eventDispatcher
     );
