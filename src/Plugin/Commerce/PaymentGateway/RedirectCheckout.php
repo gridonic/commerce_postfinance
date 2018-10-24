@@ -2,13 +2,20 @@
 
 namespace Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway;
 
-use Drupal;
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_payment\PaymentMethodTypeManager;
+use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OffsitePaymentGatewayBase;
 use Drupal\commerce_postfinance\OrderIdMappingService;
 use Drupal\commerce_postfinance\PaymentResponseService;
+use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Provides the Postfinance offsite payment gateway.
@@ -19,11 +26,7 @@ use Symfony\Component\HttpFoundation\Request;
  *   display_label = @Translation("Postfinance"),
  *    forms = {
  *     "offsite-payment" = "Drupal\commerce_postfinance\PluginForm\RedirectCheckoutForm",
- *   },
- *   payment_method_types = {"credit_card"},
- *   credit_card_types = {
- *     "mastercard", "visa",
- *   },
+ *   }
  * )
  */
 class RedirectCheckout extends OffsitePaymentGatewayBase {
@@ -34,6 +37,74 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
   const HASH_SHA1 = 'sha1';
   const HASH_SHA256 = 'sha256';
   const HASH_SHA512 = 'sha512';
+
+  /**
+   * The logger channel factory.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
+   */
+  private $loggerChannelFactory;
+
+  /**
+   * The event dispatcher.
+   *
+   * @var \Symfony\Component\EventDispatcher\EventDispatcherInterface
+   */
+  private $eventDispatcher;
+
+  /**
+   * Constructs a new Postfinance gateway.
+   *
+   * @param array $configuration
+   *   A configuration array containing information about the plugin instance.
+   * @param string $pluginId
+   *   The plugin_id for the plugin instance.
+   * @param mixed $pluginDefinition
+   *   The plugin implementation definition.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager.
+   * @param \Drupal\commerce_payment\PaymentTypeManager $paymentTypeManager
+   *   The payment type manager.
+   * @param \Drupal\commerce_payment\PaymentMethodTypeManager $paymentMethodTypeManager
+   *   The payment method type manager.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time.
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $loggerChannelFactory
+   *   The logger channel factory.
+   * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $eventDispatcher
+   *   The event dispatcher.
+   */
+  public function __construct(array $configuration,
+                              $pluginId,
+                              $pluginDefinition,
+                              EntityTypeManagerInterface $entityTypeManager,
+                              PaymentTypeManager $paymentTypeManager,
+                              PaymentMethodTypeManager $paymentMethodTypeManager,
+                              TimeInterface $time,
+                              LoggerChannelFactoryInterface $loggerChannelFactory,
+                              EventDispatcherInterface $eventDispatcher
+  ) {
+    parent::__construct($configuration, $pluginId, $pluginDefinition, $entityTypeManager, $paymentTypeManager, $paymentMethodTypeManager, $time);
+    $this->loggerChannelFactory = $loggerChannelFactory;
+    $this->eventDispatcher = $eventDispatcher;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $pluginId, $pluginDefinition) {
+    return new static(
+      $configuration,
+      $pluginId,
+      $pluginDefinition,
+      $container->get('entity_type.manager'),
+      $container->get('plugin.manager.commerce_payment_type'),
+      $container->get('plugin.manager.commerce_payment_method_type'),
+      $container->get('datetime.time'),
+      $container->get('logger.factory'),
+      $container->get('event_dispatcher')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -102,13 +173,17 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       '#required' => TRUE,
     ];
 
-    $nodeCatalog = $this->entityTypeManager->getStorage('node')->load($this->configuration['node_catalog']);
+    $nodeCatalog = '';
+    if ($this->configuration['node_catalog']) {
+      $nodeCatalog = $this->entityTypeManager->getStorage('node')
+        ->load($this->configuration['node_catalog']);
+    }
     $form['node_catalog'] = [
       '#type' => 'entity_autocomplete',
       '#target_type' => 'node',
       '#title' => $this->t('Catalog url'),
       '#description' => $this->t('Select a node representing the catalog page.'),
-      '#default_value' => ($nodeCatalog) ? $nodeCatalog : '',
+      '#default_value' => ($nodeCatalog) ?: '',
     ];
 
     return $form;
@@ -151,6 +226,51 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function onNotify(Request $request) {
+    parent::onNotify($request);
+
+    $parameters = ($request->getMethod() === 'GET') ? $request->query : $request->request;
+
+    // Note: We always return a 200 response, also in case of errors.
+    // Otherwise Postfinance performs this request multiple times.
+    if (!$parameters->has('orderID')) {
+      $this->logger()->warning('Received post-payment request with missing orderID parameter. Parameters: %params', [
+        '%params' => json_encode($parameters->all()),
+      ]);
+      return new Response();
+    }
+
+    $order = $this->getOrderByRemoteOrderId($parameters->get('orderID'));
+
+    if (!$order) {
+      $this->logger()->warning('Received post-payment request which could not be mapped to an order. Parameters: %params', [
+        '%params' => json_encode($parameters->all()),
+      ]);
+      return new Response();
+    }
+
+    try {
+      $paymentResponseService = $this->getPaymentResponseService();
+      $paymentResponseService->onReturn($order, $request);
+
+      // If the customer did not return from Postfinance,
+      // the order is still locked. Unlock it!
+      if ($order->isLocked()) {
+        $order->unlock();
+        $order->save();
+      }
+
+      return new Response();
+    }
+    catch (\Exception $e) {
+    }
+
+    return new Response();
+  }
+
+  /**
    * Get the payment gateway entity ID.
    *
    * @return string
@@ -166,14 +286,47 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
    * @return \Drupal\commerce_postfinance\PaymentResponseService
    *   The payment response service.
    */
-  protected function getPaymentResponseService() {
+  private function getPaymentResponseService() {
     return new PaymentResponseService(
       $this,
       new OrderIdMappingService(),
       $this->entityTypeManager,
-      Drupal::service('logger.factory')->get('commerce_postfinance'),
-      Drupal::service('event_dispatcher')
+      $this->logger(),
+      $this->eventDispatcher
     );
+  }
+
+  /**
+   * Get the commerce order from a given remote order ID.
+   *
+   * @param string $remoteOrderId
+   *   Remote order ID from Postfinance.
+   *
+   * @return \Drupal\commerce_order\Entity\OrderInterface
+   *   The commerce order.
+   */
+  private function getOrderByRemoteOrderId($remoteOrderId) {
+    $orderIdMappingService = new OrderIdMappingService();
+    $orderId = $orderIdMappingService->getOrderIdFromRemoteOrderId($remoteOrderId);
+
+    try {
+      return $this->entityTypeManager
+        ->getStorage('commerce_order')
+        ->load($orderId);
+    }
+    catch (\Exception $e) {
+      return NULL;
+    }
+  }
+
+  /**
+   * Get the logger channel for this module.
+   *
+   * @return \Drupal\Core\Logger\LoggerChannelInterface
+   *   The logger channel.
+   */
+  private function logger() {
+    return $this->loggerChannelFactory->get('commerce_postfinance');
   }
 
 }
