@@ -248,7 +248,7 @@ class PaymentResponseService {
       '%details' => json_encode($parameters),
     ]);
 
-    $this->saveCommercePayment($order, $response, 'pending');
+    $this->saveCommercePayment($order, $response, 'complete');
     $this->dispatchEvent($order, $parameters);
   }
 
