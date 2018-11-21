@@ -30,15 +30,12 @@ class PaymentResponseSubscriber implements EventSubscriberInterface {
    *
    * @param \Drupal\commerce_postfinance\Event\PaymentResponseEvent $event
    *   The PaymentResponseEvent event.
-   *
-   * @throws \Drupal\Core\Entity\EntityStorageException
    */
   public function onPaymentResponse(PaymentResponseEvent $event) {
     $order = $event->getOrder();
     $parameters = $event->getParameters();
 
     $order->setData('commerce_postfinance_payment', $parameters);
-    $order->save();
   }
 
 }
