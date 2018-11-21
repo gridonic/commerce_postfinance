@@ -255,13 +255,6 @@ class RedirectCheckout extends OffsitePaymentGatewayBase {
       $paymentResponseService = $this->getPaymentResponseService();
       $paymentResponseService->onReturn($order, $request);
 
-      // If the customer did not return from Postfinance,
-      // the order is still locked. Unlock it!
-      if ($order->isLocked()) {
-        $order->unlock();
-        $order->save();
-      }
-
       return new Response();
     }
     catch (\Exception $e) {
