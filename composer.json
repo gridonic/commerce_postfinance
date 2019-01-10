@@ -1,10 +1,20 @@
 {
-  "name": "gridonic/commerce_postfinance",
+  "name": "drupal/commerce_postfinance",
   "type": "drupal-module",
   "description": "Provides Commerce integration for Postfinance",
   "homepage": "https://drupal.org/project/commerce_postfinance",
-  "license": "GPL-2.0+",
+  "license": "GPL-2.0-or-later",
   "keywords": ["drupal", "commerce", "postfinance"],
+  "authors": [
+    {
+      "name": "Gridonic",
+      "email": "hello@gridonic.ch",
+      "homepage": "https://gridonic.ch",
+    }
+  ],
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/commerce_postfinance"
+  },
   "require": {
     "drupal/commerce": "~2",
     "whatwedo/postfinance-e-payment": "^1.1"
