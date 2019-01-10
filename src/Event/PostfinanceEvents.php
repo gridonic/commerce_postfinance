@@ -4,8 +4,6 @@ namespace Drupal\commerce_postfinance\Event;
 
 /**
  * Defines events for the Commerce Postfinance module.
- *
- * @package Drupal\commerce_postfinance\Event
  */
 final class PostfinanceEvents {
 

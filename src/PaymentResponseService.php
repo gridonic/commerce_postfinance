@@ -11,7 +11,6 @@ use Drupal\commerce_postfinance\Plugin\Commerce\PaymentGateway\RedirectCheckout;
 use Drupal\commerce_price\Price;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use whatwedo\PostFinanceEPayment\Environment\ProductionEnvironment;
@@ -23,8 +22,6 @@ use whatwedo\PostFinanceEPayment\Response\Response;
 
 /**
  * Service class to handle a payment response from Postfinance in Commerce.
- *
- * @package Drupal\commerce_postfinance
  */
 class PaymentResponseService {
 

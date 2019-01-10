@@ -10,8 +10,6 @@ use Drupal\Core\Form\FormStateInterface;
 
 /**
  * A form redirecting to the Postfinance payment endpoint.
- *
- * @package Drupal\commerce_postfinance\PluginForm
  */
 class RedirectCheckoutForm extends PaymentOffsiteForm {
 

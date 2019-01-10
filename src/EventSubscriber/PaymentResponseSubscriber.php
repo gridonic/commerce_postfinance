@@ -11,8 +11,6 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *
  * Adds all post-sale parameters from Postfinance to the order.
  * This allows for example to lookup the used payment method.
- *
- * @package Drupal\heimat_shop\EventSubscriber
  */
 class PaymentResponseSubscriber implements EventSubscriberInterface {
 

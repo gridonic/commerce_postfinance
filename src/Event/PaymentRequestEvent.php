@@ -6,9 +6,9 @@ use Drupal\commerce_order\Entity\OrderInterface;
 use Symfony\Component\EventDispatcher\Event;
 
 /**
- * PaymentRequestEvent.
+ * Event fired when performing the payment request to Postfinance.
  *
- * @package Drupal\commerce_postfinance\Event
+ * Allows developers to modify or send additional parameters to Postfinance.
  */
 class PaymentRequestEvent extends Event {
 

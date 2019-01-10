@@ -18,8 +18,6 @@ use whatwedo\PostFinanceEPayment\PostFinanceEPayment;
 
 /**
  * Service collecting data required for the payment request to Postfinance.
- *
- * @package Drupal\commerce_postfinance
  */
 class PaymentRequestService {
 

@@ -6,16 +6,12 @@ use Drupal\commerce_order\Entity\OrderInterface;
 use Symfony\Component\EventDispatcher\Event;
 
 /**
- * PaymentResponseEvent.
- *
  * This event is dispatched after receiving the post-payment request from
  * Postfinance. Note that the event is always dispatched, regardless of the
  * payment status (success, error, cancel). The event handler is responsible
  * to check the status and act accordingly.
  *
  * @see \whatwedo\PostFinanceEPayment\Model\PaymentStatus
- *
- * @package Drupal\commerce_postfinance\Event
  */
 class PaymentResponseEvent extends Event {
 
