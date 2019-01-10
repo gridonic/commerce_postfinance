@@ -215,8 +215,8 @@ class PaymentResponseService {
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   protected function handleResponseSuccess(OrderInterface $order, Response $response, array $parameters) {
-    $this->saveCommercePayment($order, $response, 'completed');
     $this->dispatchEvent($order, $parameters);
+    $this->saveCommercePayment($order, $response, 'completed');
   }
 
   /**
@@ -245,8 +245,8 @@ class PaymentResponseService {
       '%details' => json_encode($parameters),
     ]);
 
-    $this->saveCommercePayment($order, $response, 'complete');
     $this->dispatchEvent($order, $parameters);
+    $this->saveCommercePayment($order, $response, 'completed');
   }
 
   /**
