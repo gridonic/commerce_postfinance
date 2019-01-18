@@ -11,7 +11,7 @@ _Postfinance Card_, _Visa, Mastercard_, _Twint_ and many more.
 Install with Composer:
 
 ```
-composer require drupal/commerce_postfinance:^1.0
+composer require drupal/commerce_postfinance:^2.0
 ```
 
 Enable the module in Drupal and create a new payment gateway of type
@@ -36,5 +36,5 @@ the Postfinance backend. Choose between `SHA-1`, `SHA-256` or `SHA-512`.
 (recommended) or `ISO 8859 1`.
 * **Catalog url** A node representing the catalog page of the shop.
 
-Please follow the [official documentation]() on how to configure you Postfinance
+Please follow the [official documentation](https://www.drupal.org/docs/8/modules/commerce-postfinance) on how to configure you Postfinance
 Backoffice to work with this module.
