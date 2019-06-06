@@ -100,7 +100,7 @@ class PaymentRequestService {
       $environment
         ->setAcceptUrl($form['#return_url'])
         ->setCancelUrl($form['#cancel_url'])
-        ->setExceptionUrl($form['#exception_url'])
+        ->setExceptionUrl($form['#return_url'])
         ->setDeclineUrl($form['#return_url']);
 
       $orderPostfinance = $this->setupPostfinanceOrder($order);

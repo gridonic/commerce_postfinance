@@ -109,7 +109,7 @@ class PaymentRequestServiceTest extends UnitTestCase {
     $this->assertEquals('/url/return', $parameters[Parameter::ACCEPT_URL]);
     $this->assertEquals('/url/return', $parameters[Parameter::DECLINE_URL]);
     $this->assertEquals('/url/cancel', $parameters[Parameter::CANCEL_URL]);
-    $this->assertEquals('/url/exception', $parameters[Parameter::EXCEPTION_URL]);
+    $this->assertEquals('/url/return', $parameters[Parameter::EXCEPTION_URL]);
     $this->assertEquals('john.doe@example.com', $parameters[Parameter::CLIENT_EMAIL]);
     $this->assertArrayHasKey(Parameter::SIGNATURE, $parameters);
   }
@@ -183,7 +183,6 @@ class PaymentRequestServiceTest extends UnitTestCase {
     return [
       '#return_url' => '/url/return',
       '#cancel_url' => '/url/cancel',
-      '#exception_url' => '/url/exception',
     ];
   }
 
